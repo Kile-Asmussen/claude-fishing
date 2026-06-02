@@ -17,7 +17,12 @@
       system:
       let
         overlays = [ rust-overlay.overlays.default ];
-        pkgs = import nixpkgs { inherit system overlays; };
+        pkgs = import nixpkgs {
+          inherit system overlays;
+          config = {
+            allowUnfree = true;
+          };
+        };
         rustPlatform = pkgs.rust.packages.stable.rustPlatform;
       in
       {
@@ -60,20 +65,20 @@
               #
               # See also: nixpkgs#5131 nixpkgs#6091
               export SHELL=${pkgs.bashInteractive}/bin/bash
+              alias jq=xq
             '';
 
             packages = with pkgs; [
-              nix-claude-code.packages.x86_64-linux."2.1.128"
+              claude-code
               (rustPlatform.buildRustPackage (finalAttrs: {
                 pname = "xq";
                 version = "0.5.0";
-                cargoHash = "";
-                src = fetchFromGithub {
+                cargoHash = "sha256-yK8yCYiFM14aBem65/3eWPa+Ym18/gxU5dw4mbLtLnc=";
+                src = fetchFromGitHub {
                   owner = "MiSawa";
                   repo = "xq";
-                  tag = finalAttrs.version;
-                  hash = "";
-                  commit = "86c2e322fe3094be1ea336abd8841bb64777a6cd";
+                  hash = "sha256-zoGMkYLeE+kNEzFd1hICAJ157wwH33G6pd3Ht90kI9I=";
+                  rev = "86c2e322fe3094be1ea336abd8841bb64777a6cd";
                 };
               }))
             ];

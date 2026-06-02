@@ -1,0 +1,9 @@
+{
+    "explorer.fileNesting.enabled": false,
+    "explorer.fileNesting.patterns": {
+        "tsconfig.json": "tsconfig.*.json",
+        "package.json": "package-lock.json, yarn.lock, pnpm-lock.yaml, bun.lockb, bun.lock",
+        "Cargo.toml": "Cargo.lock",
+        ".envrc": "flake.nix, flake.lock"
+    }
+}
