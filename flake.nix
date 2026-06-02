@@ -69,6 +69,7 @@
             '';
 
             packages = with pkgs; [
+              (python314.withPackages (ps: [ ]))
               claude-code
               (rustPlatform.buildRustPackage (finalAttrs: {
                 pname = "xq";
