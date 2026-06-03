@@ -1,5 +1,7 @@
 flake.lock
 .direnv
+.claude/log
+.claude/log~
 
 # Added by cargo
 

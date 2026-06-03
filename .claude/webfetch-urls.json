@@ -1,11 +1,7 @@
 [
-  "lua-api.factorio.com",
-  "wiki.factorio.com",
-  "forums.factorio.com",
-  "mods.factorio.com",
-  "github.com/yokaze/custom-inventory-start/*",
-  "github.com/wube/factorio-data/*",
-  "raw.githubusercontent.com/wube/factorio-data/*",
-  "docs.rs/mlua/latest/mlua/*",
-  "www.lua.org"
+  "docs.rs",
+  "code.claude.com",
+  "docs.anthropic.com",
+  "cargo.io",
+  "github.com/burntsushi/ripgrep/*"
 ]

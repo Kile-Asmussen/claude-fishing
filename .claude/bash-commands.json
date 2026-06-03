@@ -1,4 +1,6 @@
 [
     "cargo build",
-    "cargo test"
+    "cargo test",
+    "cargo run -- help",
+    "cargo run -- help *"
 ]
