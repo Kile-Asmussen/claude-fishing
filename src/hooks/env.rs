@@ -1,8 +1,9 @@
+use serde::Serialize;
 use std::io::Write as _;
 use std::path::PathBuf;
-use serde::Serialize;
 
 pub enum HookConfig {
+    #[allow(unused, reason = "for testing")]
     Direct(String),
     File(PathBuf),
 }
@@ -18,7 +19,9 @@ impl HookConfig {
 
     fn write(&self, label: &str, value: &str) -> Result<(), String> {
         match self {
-            HookConfig::Direct(_) => Err(format!("cannot write {label}: config is Direct, not File")),
+            HookConfig::Direct(_) => {
+                Err(format!("cannot write {label}: config is Direct, not File"))
+            }
             HookConfig::File(path) => std::fs::write(path, value)
                 .map_err(|e| format!("could not write {label} ({path:?}): {e}")),
         }
@@ -27,14 +30,25 @@ impl HookConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub enum PreToolDecision { Allow, #[default] Deny }
+pub enum PreToolDecision {
+    Allow,
+    #[default]
+    Deny,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub enum ConfigDecision { Allow, #[default] Block }
+pub enum ConfigDecision {
+    Allow,
+    #[default]
+    Block,
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Default)]
-pub enum PreToolUseLiteral { #[default] PreToolUse }
+pub enum PreToolUseLiteral {
+    #[default]
+    PreToolUse,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,33 +69,43 @@ pub enum HookResponse {
 impl HookResponse {
     fn log_label(&self) -> &'static str {
         match self {
-            HookResponse::HookSpecificOutput { permission_decision: PreToolDecision::Allow, .. } => "ALLOW",
+            HookResponse::HookSpecificOutput {
+                permission_decision: PreToolDecision::Allow,
+                ..
+            } => "ALLOW",
             HookResponse::HookSpecificOutput { .. } => "DENY",
-            HookResponse::ConfigChange { decision: ConfigDecision::Allow, .. } => "CONFIG_ALLOW",
+            HookResponse::ConfigChange {
+                decision: ConfigDecision::Allow,
+                ..
+            } => "CONFIG_ALLOW",
             HookResponse::ConfigChange { .. } => "CONFIG_BLOCK",
         }
     }
 
     fn reason(&self) -> &str {
         match self {
-            HookResponse::HookSpecificOutput { permission_decision_reason, .. } => permission_decision_reason,
+            HookResponse::HookSpecificOutput {
+                permission_decision_reason,
+                ..
+            } => permission_decision_reason,
             HookResponse::ConfigChange { reason, .. } => reason,
         }
     }
 }
 
 pub struct HookEnv {
-    pub bash:     HookConfig,
-    pub paths:    HookConfig,
+    pub bash: HookConfig,
+    pub paths: HookConfig,
     pub webfetch: HookConfig,
     pub settings: HookConfig,
     pub log_path: Option<PathBuf>,
-    pub log_buf:  String,
+    pub log_buf: String,
     pub response: Option<HookResponse>,
 }
 
 impl HookEnv {
     /// Construct for testing, supplying config contents directly; logging is suppressed.
+    #[allow(unused, reason = "for testing")]
     pub fn test(
         bash: impl Into<String>,
         paths: impl Into<String>,
@@ -89,12 +113,12 @@ impl HookEnv {
         settings: impl Into<String>,
     ) -> Self {
         HookEnv {
-            bash:     HookConfig::Direct(bash.into()),
-            paths:    HookConfig::Direct(paths.into()),
+            bash: HookConfig::Direct(bash.into()),
+            paths: HookConfig::Direct(paths.into()),
             webfetch: HookConfig::Direct(webfetch.into()),
             settings: HookConfig::Direct(settings.into()),
             log_path: None,
-            log_buf:  String::new(),
+            log_buf: String::new(),
             response: None,
         }
     }
@@ -131,7 +155,10 @@ impl HookEnv {
     // ── Response emitters ─────────────────────────────────────────────────────
 
     fn push(&mut self, response: HookResponse) {
-        assert!(self.response.is_none(), "HookEnv: second response emitted (would produce invalid JSON output)");
+        assert!(
+            self.response.is_none(),
+            "HookEnv: second response emitted (would produce invalid JSON output)"
+        );
         self.log(format!("[{}] {}", response.log_label(), response.reason()));
         self.response = Some(response);
     }
@@ -176,7 +203,11 @@ impl HookEnv {
         }
         if !self.log_buf.is_empty() {
             if let Some(ref path) = self.log_path {
-                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                {
                     let _ = f.write_all(self.log_buf.as_bytes());
                 }
             }
@@ -190,7 +221,10 @@ impl HookEnv {
     #[cfg(test)]
     pub fn decision(&self) -> Option<&PreToolDecision> {
         match self.response.as_ref()? {
-            HookResponse::HookSpecificOutput { permission_decision, .. } => Some(permission_decision),
+            HookResponse::HookSpecificOutput {
+                permission_decision,
+                ..
+            } => Some(permission_decision),
             HookResponse::ConfigChange { .. } => None,
         }
     }
@@ -216,7 +250,10 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["hookSpecificOutput"]["permissionDecision"], "allow");
         assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PreToolUse");
-        assert_eq!(v["hookSpecificOutput"]["permissionDecisionReason"], "test reason");
+        assert_eq!(
+            v["hookSpecificOutput"]["permissionDecisionReason"],
+            "test reason"
+        );
     }
 
     #[test]
