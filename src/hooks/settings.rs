@@ -1,18 +1,26 @@
-use std::path::Path;
 use serde_json::Value;
+use std::path::Path;
 
 use super::env::HookEnv;
 
 const DEFAULT_SCHEMA_URL: &str = "https://json.schemastore.org/claude-code-settings.json";
 
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
     JsonOnly,
     Schema(String),
+    #[default]
     Default,
 }
 
-pub fn check(_project_dir: &Path, env: &mut HookEnv, mode: Mode) {
-    let text = match env.settings_json() {
+pub fn check(_project_dir: &Path, env: &mut HookEnv, mode: Mode, local: bool) {
+    let text = if local {
+        env.settings_local_json()
+    } else {
+        env.settings_json()
+    };
+
+    let text = match text {
         Ok(t) => t,
         Err(e) => return env.config_block(format!("could not read settings.json: {e}")),
     };
@@ -22,7 +30,7 @@ pub fn check(_project_dir: &Path, env: &mut HookEnv, mode: Mode) {
         Err(e) => return env.config_block(format!("settings.json is not valid JSON: {e}")),
     };
 
-    if matches!(mode, Mode::JsonOnly) {
+    if mode == Mode::JsonOnly {
         return env.config_allow("settings.json is valid JSON");
     }
 
@@ -43,35 +51,40 @@ pub fn check(_project_dir: &Path, env: &mut HookEnv, mode: Mode) {
 
     let errors: Vec<String> = validator
         .iter_errors(&value)
-        .map(|e| format!("{} (at {})", e, e.instance_path))
+        .map(|e| format!("{} (at {})", e, e.instance_path()))
         .collect();
 
     if errors.is_empty() {
         env.config_allow("settings.json is valid")
     } else {
-        env.config_block(format!("settings.json failed schema validation:\n{}", errors.join("\n")))
+        env.config_block(format!(
+            "settings.json failed schema validation:\n{}",
+            errors.join("\n")
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-    use crate::hooks::env::{HookEnv, ConfigDecision};
     use super::Mode;
+    use crate::hooks::env::{ConfigDecision, HookEnv};
+    use std::path::Path;
 
-    fn env(settings: &str) -> HookEnv { HookEnv::test("", "", "", settings) }
+    fn env(settings: &str) -> HookEnv {
+        HookEnv::test("", "", "", settings)
+    }
 
     #[test]
     fn json_only_allows_valid_json() {
         let mut env = env(r#"{"key":"value"}"#);
-        super::check(Path::new("."), &mut env, Mode::JsonOnly);
+        super::check(Path::new("."), &mut env, Mode::JsonOnly, false);
         assert_eq!(env.config_decision(), Some(&ConfigDecision::Allow));
     }
 
     #[test]
     fn json_only_blocks_invalid_json() {
         let mut env = env("not json {{{");
-        super::check(Path::new("."), &mut env, Mode::JsonOnly);
+        super::check(Path::new("."), &mut env, Mode::JsonOnly, false);
         assert_eq!(env.config_decision(), Some(&ConfigDecision::Block));
     }
 
@@ -80,7 +93,7 @@ mod tests {
         let mut env = HookEnv::test("", "", "", "");
         // simulate unreadable by using a File path that doesn't exist
         env.settings = crate::hooks::env::HookConfig::File("/nonexistent/settings.json".into());
-        super::check(Path::new("."), &mut env, Mode::JsonOnly);
+        super::check(Path::new("."), &mut env, Mode::JsonOnly, false);
         assert_eq!(env.config_decision(), Some(&ConfigDecision::Block));
     }
 
@@ -92,24 +105,30 @@ mod tests {
 
     #[test]
     fn schema_file_allows_conforming_settings() {
-        let url = write_schema("fishing_test_schema_allow.json", serde_json::json!({
-            "type": "object",
-            "properties": { "key": { "type": "string" } }
-        }));
+        let url = write_schema(
+            "fishing_test_schema_allow.json",
+            serde_json::json!({
+                "type": "object",
+                "properties": { "key": { "type": "string" } }
+            }),
+        );
         let mut env = env(r#"{"key":"value"}"#);
-        super::check(Path::new("."), &mut env, Mode::Schema(url));
+        super::check(Path::new("."), &mut env, Mode::Schema(url), false);
         assert_eq!(env.config_decision(), Some(&ConfigDecision::Allow));
     }
 
     #[test]
     fn schema_file_blocks_non_conforming_settings() {
-        let url = write_schema("fishing_test_schema_block.json", serde_json::json!({
-            "type": "object",
-            "properties": { "key": { "type": "string" } },
-            "required": ["key"]
-        }));
+        let url = write_schema(
+            "fishing_test_schema_block.json",
+            serde_json::json!({
+                "type": "object",
+                "properties": { "key": { "type": "string" } },
+                "required": ["key"]
+            }),
+        );
         let mut env = env(r#"{}"#);
-        super::check(Path::new("."), &mut env, Mode::Schema(url));
+        super::check(Path::new("."), &mut env, Mode::Schema(url), false);
         assert_eq!(env.config_decision(), Some(&ConfigDecision::Block));
     }
 }

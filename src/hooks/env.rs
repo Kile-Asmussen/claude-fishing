@@ -1,9 +1,12 @@
-use serde::Serialize;
-use std::io::Write as _;
-use std::path::PathBuf;
+use rootcause::report;
+use serde::{Deserialize, Serialize};
+use std::{io::Write, path::PathBuf};
 
+#[derive(Default, Debug, Clone)]
 pub enum HookConfig {
     #[allow(unused, reason = "for testing")]
+    #[default]
+    Empty,
     Direct(String),
     File(PathBuf),
 }
@@ -11,6 +14,7 @@ pub enum HookConfig {
 impl HookConfig {
     fn load(&self, label: &str) -> Result<String, String> {
         match self {
+            HookConfig::Empty => Ok("".to_string()),
             HookConfig::Direct(s) => Ok(s.clone()),
             HookConfig::File(path) => std::fs::read_to_string(path)
                 .map_err(|e| format!("could not read {label} ({path:?}): {e}")),
@@ -19,9 +23,9 @@ impl HookConfig {
 
     fn write(&self, label: &str, value: &str) -> Result<(), String> {
         match self {
-            HookConfig::Direct(_) => {
-                Err(format!("cannot write {label}: config is Direct, not File"))
-            }
+            HookConfig::Direct(_) | HookConfig::Empty => Err(format!(
+                "cannot write {label}: config is Direct/Empty, not File"
+            )),
             HookConfig::File(path) => std::fs::write(path, value)
                 .map_err(|e| format!("could not write {label} ({path:?}): {e}")),
         }
@@ -44,7 +48,7 @@ pub enum ConfigDecision {
     Block,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub enum PreToolUseLiteral {
     #[default]
     PreToolUse,
@@ -93,17 +97,34 @@ impl HookResponse {
     }
 }
 
+#[derive(Default, Debug, Clone)]
 pub struct HookEnv {
     pub bash: HookConfig,
     pub paths: HookConfig,
     pub webfetch: HookConfig,
     pub settings: HookConfig,
+    pub settings_local: HookConfig,
     pub log_path: Option<PathBuf>,
     pub log_buf: String,
     pub response: Option<HookResponse>,
 }
 
 impl HookEnv {
+    pub fn report<T, E: Send + Sync + 'static>(
+        &mut self,
+        r: Result<T, E>,
+        context: impl Into<String>,
+    ) -> Result<T, rootcause::Report> {
+        match r {
+            Ok(t) => Ok(t),
+            Err(e) => {
+                let e = report!(e).context(context.into()).into_dynamic();
+                self.log(format!("{e}"));
+                Err(e)
+            }
+        }
+    }
+
     /// Construct for testing, supplying config contents directly; logging is suppressed.
     #[allow(unused, reason = "for testing")]
     pub fn test(
@@ -112,11 +133,13 @@ impl HookEnv {
         webfetch: impl Into<String>,
         settings: impl Into<String>,
     ) -> Self {
+        let settings = settings.into();
         HookEnv {
             bash: HookConfig::Direct(bash.into()),
             paths: HookConfig::Direct(paths.into()),
             webfetch: HookConfig::Direct(webfetch.into()),
-            settings: HookConfig::Direct(settings.into()),
+            settings: HookConfig::Direct(settings.clone()),
+            settings_local: HookConfig::Direct(settings),
             log_path: None,
             log_buf: String::new(),
             response: None,
@@ -141,8 +164,17 @@ impl HookEnv {
         self.settings.load("settings.json")
     }
 
+    pub fn settings_local_json(&self) -> Result<String, String> {
+        self.settings_local.load("settings.local.json")
+    }
+
     pub fn write_settings_json(&self, value: &str) -> Result<(), String> {
         self.settings.write("settings.json", value)
+    }
+
+    #[allow(unused, reason = "mirror of write_settings_json")]
+    pub fn write_settings_local_json(&self, value: &str) -> Result<(), String> {
+        self.settings_local.write("settings.json", value)
     }
 
     // ── Logging ───────────────────────────────────────────────────────────────
@@ -199,9 +231,10 @@ impl HookEnv {
         if let Some(ref r) = self.response {
             let json = serde_json::to_string(r).unwrap();
             println!("{json}");
-            self.log(format!("verdict: {json}"));
+            self.log(format!("stdout:\n{json}"));
         }
         if !self.log_buf.is_empty() {
+            self.log_buf.push('\n');
             if let Some(ref path) = self.log_path {
                 if let Ok(mut f) = std::fs::OpenOptions::new()
                     .create(true)
@@ -214,6 +247,7 @@ impl HookEnv {
         }
     }
 
+    #[cfg(test)]
     pub fn response(&self) -> Option<&HookResponse> {
         self.response.as_ref()
     }

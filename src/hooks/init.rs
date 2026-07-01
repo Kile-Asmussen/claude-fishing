@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use crate::defaults;
 use super::env::HookEnv;
+use crate::defaults;
 
 pub fn init(project_dir: &Path, env: &mut HookEnv, inject: Option<&str>) -> Result<(), String> {
     create_missing_configs(project_dir)?;
@@ -43,15 +43,14 @@ fn update_gitignore(project_dir: &Path) -> Result<(), String> {
         appended.push_str(entry);
         appended.push('\n');
     }
-    std::fs::write(&gitignore, appended)
-        .map_err(|e| format!("failed to update .gitignore: {e}"))
+    std::fs::write(&gitignore, appended).map_err(|e| format!("failed to update .gitignore: {e}"))
 }
 
 fn inject_hooks(env: &mut HookEnv, cmd: &str) -> Result<(), String> {
     let raw = env.settings_json()?;
 
-    let mut root: serde_json::Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("settings.json is not valid JSON: {e}"))?;
+    let mut root: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("settings.json is not valid JSON: {e}"))?;
 
     let hooks = root
         .as_object_mut()
@@ -64,12 +63,22 @@ fn inject_hooks(env: &mut HookEnv, cmd: &str) -> Result<(), String> {
         .and_then(|v| v.as_object_mut())
         .ok_or_else(|| "settings.json hooks field is not an object".to_string())?;
 
-    append_hook(hooks, "SessionStart",  None,                                           &format!("{cmd} rotate-log"));
-    append_hook(hooks, "PreToolUse",    Some("Bash|Read|Glob|Grep|WebFetch|Edit|Write"), &format!("{cmd} tool-use"));
-    append_hook(hooks, "ConfigChange",  Some("project_settings"),                        &format!("{cmd} settings"));
+    append_hook(hooks, "SessionStart", None, &format!("{cmd} rotate-log"));
+    append_hook(
+        hooks,
+        "PreToolUse",
+        Some("Bash|Read|Glob|Grep|WebFetch|Edit|Write"),
+        &format!("{cmd} tool-use"),
+    );
+    append_hook(
+        hooks,
+        "ConfigChange",
+        Some("project_settings|local_settings|user_settings"),
+        &format!("{cmd} settings"),
+    );
 
     let out = serde_json::to_string_pretty(&root)
-        .map_err(|e| format!("failed to serialise settings.json: {e}"))?;
+        .map_err(|e| format!("failed to serialize settings.json: {e}"))?;
 
     env.write_settings_json(&out)
 }
@@ -80,9 +89,7 @@ fn append_hook(
     matcher: Option<&str>,
     command: &str,
 ) {
-    let array = hooks
-        .entry(event)
-        .or_insert_with(|| serde_json::json!([]));
+    let array = hooks.entry(event).or_insert_with(|| serde_json::json!([]));
 
     let entry = if let Some(m) = matcher {
         serde_json::json!({

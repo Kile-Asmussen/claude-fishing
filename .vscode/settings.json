@@ -7,5 +7,7 @@
         "README.md": "CLAUDE.md, LICENSE",
         "hook-restrict-*.py": "${capture}.json",
         "*": "${capture}~"
-    }
+    },
+    "rust-analyzer.trace.server": "verbose",
+    "direnv.path.executable": "/nix/store/7k54agvl4vk4cjkc3b084miakwbhdkr0-home-manager-path/bin/direnv"
 }

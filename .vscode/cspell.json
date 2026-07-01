@@ -1,11 +1,16 @@
 {
     "words": [
+        "cli",
+        "cwd",
         "Env",
+        "fmt",
         "miri",
         "nixpkgs",
         "pkgs",
         "pname",
         "Sawa",
+        "serde",
+        "Uncloneable",
         "xq"
     ]
 }

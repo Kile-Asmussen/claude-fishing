@@ -10,17 +10,53 @@ pub const CONFIG_FILES: &[ConfigFile] = &[
     ConfigFile {
         rel_path: ".claude/bash",
         local_rel_path: ".claude/bash-local",
-        default_content: "# examples:\necho 'Hello \\w+!'\n!\\s+rm.*",
+        default_content: r"
+# Each line is a regex that matches against bash commands which Claude wishes to run.
+#
+# Lines prefixed with ! are negative patterns, other lines are positive patterns.
+# Contents of .claude/bash-local (.gitignore'd by default) is added to this list if it exists.
+# If any positive pattern and no negative patterns match, the command is allowed.
+#
+# To have a pattern match a literal ! as the first character, use a character class: [!]
+#
+# examples:
+echo 'Hello \\w+!'
+!\s+rm.*
+",
     },
     ConfigFile {
         rel_path: ".claude/paths",
         local_rel_path: ".claude/paths-local",
-        default_content: "# default:\n./**/*\n**/*\n./*\n*\n!.env",
+        default_content: r"
+# Each line is a glob pattern, similar to .gitignore syntax, that matches against file names Claude wishes to read.
+#
+# Lines prefixed with ! are negative patterns, other lines are positive patterns.
+# Contents of .claude/paths-local (.gitignore'd by default) is added to this list if it exists.
+# If any positive pattern and no negative patterns match, the file read is allowed.
+#
+# Patterns starting with / are absolute paths, allowing Claude to read directories outside
+# the project directory for reference, though it is recommended to put those in the local file.
+#
+# examples:
+**
+!.env
+",
     },
     ConfigFile {
         rel_path: ".claude/webfetch",
         local_rel_path: ".claude/webfetch-local",
-        default_content: "# for claude:\nhttps://code.claude.com/docs/*",
+        default_content: r"
+# Each line is a wildcard pattern that matches against URLs Claude wishes to fetch from the web.
+#
+# Lines prefixed with ! are negative patterns, other lines are positive patterns.
+# Contents of .claude/webfetch-local (.gitignore'd by default) is added to this list if it exists.
+# If any positive pattern and no negative patterns match, the file read is allowed.
+#
+# Full URLs are matched, and the * pattern matches any substring, including those containing / .
+#
+# examples:
+https://code.claude.com/docs*
+",
     },
 ];
 

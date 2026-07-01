@@ -23,6 +23,8 @@
     "defaultMode": "dontAsk",
     "deny": [
       "Agent",
+      "Write(.claude/*)",
+      "Edit(.claude/*)",
       "Write(.claude/**/*)",
       "Edit(.claude/**/*)"
     ]

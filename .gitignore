@@ -6,3 +6,6 @@ flake.lock
 # Added by cargo
 
 /target
+.claude/bash-local
+.claude/paths-local
+.claude/webfetch-local

@@ -1,5 +1,5 @@
-use std::path::Path;
 use regex::Regex;
+use std::path::Path;
 
 use super::config;
 use super::env::HookEnv;
@@ -11,20 +11,29 @@ pub fn check(_project_dir: &Path, env: &mut HookEnv, command: &str) {
     };
 
     let patterns = config::partition(&contents);
-    config::check(env, &patterns, command, "no allowed Bash patterns in .claude/bash", |p| {
-        let anchored = format!(r"\A(?:{p})\z");
-        Regex::new(&anchored)
-            .map(|re| re.is_match(command))
-            .map_err(|e| format!("pattern {p:?} failed to compile: {e}"))
-    });
+    config::check(
+        env,
+        &patterns,
+        command,
+        "no allowed Bash patterns in .claude/bash",
+        "(patterns are regular expressions using Rust syntax)\n",
+        |p| {
+            let anchored = format!(r"\A(?:{p})\z");
+            Regex::new(&anchored)
+                .map(|re| re.is_match(command))
+                .map_err(|e| format!("pattern {p:?} failed to compile: {e}"))
+        },
+    );
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use crate::hooks::env::{HookEnv, PreToolDecision};
+    use std::path::Path;
 
-    fn env(bash: &str) -> HookEnv { HookEnv::test(bash, "", "", "") }
+    fn env(bash: &str) -> HookEnv {
+        HookEnv::test(bash, "", "", "")
+    }
 
     #[test]
     fn allows_matching_command() {
@@ -61,4 +70,3 @@ mod tests {
         assert_eq!(env.decision(), Some(&PreToolDecision::Allow));
     }
 }
-

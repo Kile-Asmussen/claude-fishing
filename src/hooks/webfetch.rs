@@ -11,7 +11,14 @@ pub fn check(_project_dir: &Path, env: &mut HookEnv, url: &str) {
     };
 
     let patterns = config::partition(&contents);
-    config::check(env, &patterns, url, "no allowed WebFetch URLs in .claude/webfetch", |p| match_pattern(p, url));
+    config::check(
+        env,
+        &patterns,
+        url,
+        "no allowed WebFetch URLs in .claude/webfetch",
+        "",
+        |p| match_pattern(p, url),
+    );
 }
 
 fn match_pattern(pattern: &str, url: &str) -> Result<bool, String> {
@@ -22,15 +29,21 @@ fn match_pattern(pattern: &str, url: &str) -> Result<bool, String> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use crate::hooks::env::{HookEnv, PreToolDecision};
+    use std::path::Path;
 
-    fn env(webfetch: &str) -> HookEnv { HookEnv::test("", "", webfetch, "") }
+    fn env(webfetch: &str) -> HookEnv {
+        HookEnv::test("", "", webfetch, "")
+    }
 
     #[test]
     fn allows_matching_url() {
         let mut env = env("https://docs.rs/*");
-        super::check(Path::new("."), &mut env, "https://docs.rs/regex/latest/regex/");
+        super::check(
+            Path::new("."),
+            &mut env,
+            "https://docs.rs/regex/latest/regex/",
+        );
         assert_eq!(env.decision(), Some(&PreToolDecision::Allow));
     }
 
@@ -55,4 +68,3 @@ mod tests {
         assert_eq!(env.decision(), Some(&PreToolDecision::Deny));
     }
 }
-

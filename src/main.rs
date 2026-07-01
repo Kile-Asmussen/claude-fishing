@@ -1,79 +1,106 @@
+//! # Claude Fishing: hooks suite for Claude Code CLI
+//!
+//! Intended to enable Claude to act with greater autonomy but remaining safe
+//! such as preventing reading secrets files, not reading files outside the project
+//! directory, limiting web fetch to certain domains, and so on.
+
 mod defaults;
 mod hook_input;
 mod hooks;
 
 use clap::{Parser, Subcommand};
-use hook_input::{HookCheck, HookInput};
+use hook_input::{HookCheck, PreToolUseInput};
 use hooks::env::HookEnv;
-use std::path::PathBuf;
+use rootcause::{prelude::ResultExt, report};
+use std::{
+    io::{Read, stdin},
+    path::PathBuf,
+};
+use strum_macros::{EnumIs, IntoStaticStr};
+
+use crate::hook_input::ConfigChangeInput;
 
 /// Claude Code hook enforcement suite
 #[derive(Parser)]
 struct Cli {
-    /// Log file path (default: $CLAUDE_PROJECT_DIR/.claude/log); used by tool-use for appending decisions, by rotate-log as the rotation target
+    /// Log file path (default: $CLAUDE_PROJECT_DIR/.claude/log)
     #[arg(long, global = true)]
     log: Option<PathBuf>,
 
     /// Use the current working directory instead of $CLAUDE_PROJECT_DIR
-    #[arg(long, short = 'C', global = true)]
+    #[arg(long, global = true)]
     cwd: bool,
 
     #[command(subcommand)]
     command: Command,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, IntoStaticStr, EnumIs)]
 enum Command {
-    /// PreToolUse hook: reads stdin JSON, enforces bash/paths/webfetch/write allowlists
-    ToolUse,
-    /// ConfigChange hook: validates $CLAUDE_PROJECT_DIR/.claude/settings.json against its JSON Schema
-    Settings {
+    /// run as a PreToolUse hook, enforcing bash/paths/webfetch/write allowlists
+    PreToolUse,
+    /// ConfigChange hook that validates $CLAUDE_PROJECT_DIR/.claude/settings.json
+    ConfigChange {
         /// Only check that settings.json is valid JSON, skip schema validation
-        #[arg(long)]
+        #[arg(long, conflicts_with = "schema")]
         json_only: bool,
-        /// Schema URL or file:// path to validate against (default: json.schemastore.org)
-        #[arg(long)]
+        /// Schema URL or file:// path to validate against (default: the official schema from json.schemastore.org)
+        #[arg(long, conflicts_with = "json_only")]
         schema: Option<String>,
     },
-    /// SessionStart hook: renames the log file by appending ~, clearing it for the new session
+    /// SessionStart hook, clearing the log for the current session (preserves old log with ~ postfix)
     RotateLog,
-    /// Create missing config files under .claude/ with safe default contents
+    /// Create missing config files under .claude/ with example contents
     Init {
         /// Also inject hooks into .claude/settings.json using this command prefix
         #[arg(long)]
         inject: Option<String>,
     },
+    /// CwdChanged hook that blocks all cwd changes
+    CwdChanged,
 }
 
-fn project_dir(cwd: bool) -> PathBuf {
+fn project_dir(cwd: bool) -> Result<PathBuf, rootcause::Report> {
     if cwd {
-        std::env::current_dir().expect("could not read current working directory")
+        Ok(std::env::current_dir().context(format!("could not read current working directory"))?)
     } else {
-        std::env::var_os("CLAUDE_PROJECT_DIR")
+        Ok(std::env::var_os("CLAUDE_PROJECT_DIR")
             .map(PathBuf::from)
-            .expect("CLAUDE_PROJECT_DIR is not set and --cwd was not specified")
+            .ok_or_else(|| report!("CLAUDE_PROJECT_DIR is not set and --cwd was not specified"))?)
     }
 }
 
-fn run() {
+fn run() -> Result<(), rootcause::Report> {
     let cli = Cli::parse();
 
-    let project_dir = project_dir(cli.cwd);
+    let project_dir = project_dir(cli.cwd || cli.command.is_init())?;
+
     let claude = project_dir.join(".claude");
 
     let log: Option<PathBuf> = cli.log.or_else(|| Some(claude.join("log")));
 
     let mut env = HookEnv {
-        bash:     hooks::env::HookConfig::File(claude.join("bash")),
-        paths:    hooks::env::HookConfig::File(claude.join("paths")),
+        bash: hooks::env::HookConfig::File(claude.join("bash")),
+        paths: hooks::env::HookConfig::File(claude.join("paths")),
         webfetch: hooks::env::HookConfig::File(claude.join("webfetch")),
         settings: hooks::env::HookConfig::File(claude.join("settings.json")),
+        settings_local: hooks::env::HookConfig::File(claude.join("settings.local.json")),
         log_path: log.clone(),
-        log_buf:  String::new(),
+        log_buf: String::new(),
         response: None,
     };
 
+    env.log(&format!(
+        "[{}] {}",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        Into::<&'static str>::into(&cli.command)
+    ));
+
     match cli.command {
+        Command::CwdChanged => {
+            env.config_block("Changing the current working directory is not allowed");
+        }
+
         Command::RotateLog => {
             if let Some(ref log) = log {
                 hooks::rotate_log::rotate(log);
@@ -81,13 +108,11 @@ fn run() {
         }
 
         Command::Init { inject } => {
-            if let Err(e) = hooks::init::init(&project_dir, &mut env, inject.as_deref()) {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
+            let r = hooks::init::init(&project_dir, &mut env, inject.as_deref());
+            env.report(r, "Initialization failed")?;
         }
 
-        Command::Settings { json_only, schema } => {
+        Command::ConfigChange { json_only, schema } => {
             let mode = if json_only {
                 hooks::settings::Mode::JsonOnly
             } else if let Some(s) = schema {
@@ -95,37 +120,45 @@ fn run() {
             } else {
                 hooks::settings::Mode::Default
             };
-            hooks::settings::check(&project_dir, &mut env, mode);
-            env.flush();
+            let mut raw = String::new();
+            env.report(stdin().read_to_string(&mut raw), "unable to read stdin")?;
+            env.log(format!("stdin:\n{raw}"));
+
+            let input: ConfigChangeInput = env.report(
+                serde_json::from_str(&raw),
+                "unable to parse JSON from stdin",
+            )?;
+
+            input.check(&project_dir, &mut env, mode);
         }
 
-        Command::ToolUse => {
+        Command::PreToolUse => {
             let mut raw = String::new();
-            if let Err(e) = std::io::Read::read_to_string(&mut std::io::stdin(), &mut raw) {
-                eprintln!("failed to read stdin: {e}");
-                std::process::exit(2);
-            }
-            env.log(format!("stdin: {raw}"));
-            let input: HookInput = match serde_json::from_str(&raw) {
-                Ok(v) => v,
-                Err(e) => {
-                    env.log(format!("stdin parse error: {e}"));
-                    env.flush();
-                    eprintln!("failed to parse stdin as JSON: {e}");
-                    std::process::exit(2);
-                }
-            };
-            match input.tool_input {
-                Some(tool_input) => tool_input.check(&project_dir, &mut env),
-                None => env.allow("unrecognised tool, allowing by default"),
-            }
-            env.flush();
+            env.report(stdin().read_to_string(&mut raw), "unable to read stdin")?;
+
+            env.log(format!("stdin:\n{raw}"));
+            let input: PreToolUseInput = env.report(
+                serde_json::from_str(&raw),
+                "unable to parse JSON from stdin",
+            )?;
+            input.check(&project_dir, &mut env, ());
         }
     }
+    env.flush();
+
+    Ok(())
 }
 
 fn main() {
-    if std::panic::catch_unwind(run).is_err() {
-        std::process::exit(2);
+    match std::panic::catch_unwind(run) {
+        Err(_) => {
+            eprintln!("panic");
+            std::process::exit(2);
+        }
+        Ok(Err(e)) => {
+            eprintln!("{}", e);
+            std::process::exit(2);
+        }
+        _ => {}
     }
 }

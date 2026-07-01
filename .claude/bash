@@ -1,0 +1,7 @@
+# examples:
+echo 'Hello \w+!'
+!\s+rm.*
+cargo build
+cargo test
+cargo run -- help
+cargo run -- help [\w\-\s]*
