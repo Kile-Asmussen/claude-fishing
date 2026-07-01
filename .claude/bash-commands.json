@@ -1,6 +1,7 @@
 [
     "cargo build",
+    "cargo build --bin fishing",
+    "cargo build --bin grep-glob-mcp",
     "cargo test",
-    "cargo run -- help",
-    "cargo run -- help *"
+    "./.claude/ls.sh"
 ]
