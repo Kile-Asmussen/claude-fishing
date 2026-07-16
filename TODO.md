@@ -10,6 +10,11 @@ All features are implemented and unit-tested (63 tests passing). The project con
 
 ---
 
+## Concerns:
+
+Quality of error messages in the MCP needs to match the hooks: the object is to give Claude relevant information for how to immediately self-correct.
+
+
 ## Field testing
 
 Run these in a real Claude Code session in a sterile directory with hooks wired up via `fishing init --inject <cmd>`.
