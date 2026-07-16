@@ -4,21 +4,16 @@
 //! such as preventing reading secrets files, not reading files outside the project
 //! directory, limiting web fetch to certain domains, and so on.
 
-mod defaults;
-mod hook_input;
-mod hooks;
-
 use clap::{Parser, Subcommand};
-use hook_input::{HookCheck, PreToolUseInput};
-use hooks::env::HookEnv;
+use claude_fishing::hook_input::{ConfigChangeInput, HookCheck, PreToolUseInput};
+use claude_fishing::hooks;
+use claude_fishing::hooks::env::HookEnv;
 use rootcause::{prelude::ResultExt, report};
 use std::{
     io::{Read, stdin},
     path::PathBuf,
 };
 use strum_macros::{EnumIs, IntoStaticStr};
-
-use crate::hook_input::ConfigChangeInput;
 
 /// Claude Code hook enforcement suite
 #[derive(Parser)]
@@ -79,16 +74,7 @@ fn run() -> Result<(), rootcause::Report> {
 
     let log: Option<PathBuf> = cli.log.or_else(|| Some(claude.join("log")));
 
-    let mut env = HookEnv {
-        bash: hooks::env::HookConfig::File(claude.join("bash")),
-        paths: hooks::env::HookConfig::File(claude.join("paths")),
-        webfetch: hooks::env::HookConfig::File(claude.join("webfetch")),
-        settings: hooks::env::HookConfig::File(claude.join("settings.json")),
-        settings_local: hooks::env::HookConfig::File(claude.join("settings.local.json")),
-        log_path: log.clone(),
-        log_buf: String::new(),
-        response: None,
-    };
+    let mut env = HookEnv::from_claude_dir(&claude, log.clone());
 
     env.log(&format!(
         "[{}] {}",

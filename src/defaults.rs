@@ -58,6 +58,22 @@ echo 'Hello \\w+!'
 https://code.claude.com/docs*
 ",
     },
+    ConfigFile {
+        rel_path: ".claude/glob-exclude",
+        local_rel_path: ".claude/glob-exclude-local",
+        default_content: r"
+# Each line is a glob pattern matched against directory names or project-relative paths.
+# Matching directories are skipped entirely during Glob and Grep traversal.
+#
+# Lines prefixed with ! are unhide overrides: they allow a hidden directory (one whose
+# name starts with .) through even though hidden directories are excluded by default.
+# Contents of .claude/glob-exclude-local (.gitignore'd by default) is added to this list.
+#
+# examples:
+target
+node_modules
+",
+    },
 ];
 
 /// Config files that do not yet exist under `project_dir`.

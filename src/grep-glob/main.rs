@@ -1,9 +1,13 @@
 use std::{
-    env, fs,
+    fs,
     io::Read as _,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
+use claude_fishing::hooks::env::HookEnv;
+use claude_fishing::hooks::glob_exclude;
+use claude_fishing::hooks::paths::is_path_allowed;
+use claude_fishing::util::{project_dir, resolve_safe};
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use regex::Regex;
 use rmcp::{
@@ -22,42 +26,12 @@ use walkdir::WalkDir;
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn project_dir() -> PathBuf {
-    if let Ok(d) = env::var("CLAUDE_PROJECT_DIR") {
-        PathBuf::from(d)
-    } else {
-        env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+fn check_path_allowed(paths_cfg: &str, root: &Path, path: &Path) -> Result<(), String> {
+    match is_path_allowed(paths_cfg, root, path) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(format!("path {:?} is not permitted by .claude/paths", path)),
+        Err(e) => Err(e),
     }
-}
-
-/// Resolve `path` relative to the project root, then verify it does not
-/// escape the root via `..` components.  Returns an error string on failure.
-fn resolve_safe(root: &Path, path: &str) -> Result<PathBuf, String> {
-    let candidate = if Path::new(path).is_absolute() {
-        PathBuf::from(path)
-    } else {
-        root.join(path)
-    };
-
-    // Lexically canonicalise (collapse `.` and `..` without hitting the FS).
-    let mut out = PathBuf::new();
-    for component in candidate.components() {
-        match component {
-            std::path::Component::ParentDir => {
-                if !out.pop() {
-                    return Err(format!("path {path:?} escapes the project root"));
-                }
-            }
-            c => out.push(c),
-        }
-    }
-
-    // Must still be under root after normalisation.
-    if !out.starts_with(root) {
-        return Err(format!("path {path:?} escapes the project root"));
-    }
-
-    Ok(out)
 }
 
 /// Build a GlobSet from a single glob string.
@@ -103,6 +77,8 @@ struct GrepParams {
     include: Option<String>,
     /// Directory to search within, relative to the project root (default: project root)
     path: Option<String>,
+    /// When true, output matched lines as `path:lineno: content` instead of just file paths
+    include_lines: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -116,9 +92,17 @@ struct GrepGlobMcp;
 impl GrepGlobMcp {
     /// List files under a directory whose paths match a glob pattern.
     /// Returns one relative path per line, sorted lexicographically.
+    /// Hidden directories and paths listed in .claude/glob-exclude are skipped.
+    /// Only files permitted by .claude/paths are returned.
     #[tool(description = "List files matching a glob pattern under a directory.")]
     fn glob(&self, Parameters(params): Parameters<GlobParams>) -> CallToolResult {
         let root = project_dir();
+        let env = HookEnv::from_claude_dir(&root.join(".claude"), None);
+        let paths_cfg = match env.paths_config() {
+            Ok(s) => s,
+            Err(e) => return CallToolResult::error(vec![ContentBlock::text(e)]),
+        };
+        let exclude_cfg = env.glob_exclude_config().unwrap_or_default();
         let search_root = match params.path.as_deref() {
             Some(p) => match resolve_safe(&root, p) {
                 Ok(r) => r,
@@ -135,15 +119,22 @@ impl GrepGlobMcp {
 
         let mut matches: Vec<String> = WalkDir::new(&search_root)
             .into_iter()
+            .filter_entry(|e| {
+                if e.file_type().is_dir() {
+                    !glob_exclude::is_excluded(&exclude_cfg, &root, e.path())
+                } else {
+                    true
+                }
+            })
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().is_file())
             .filter_map(|e| {
                 let rel = e.path().strip_prefix(&search_root).ok()?;
-                if globset.is_match(rel) {
-                    Some(rel.to_string_lossy().into_owned())
-                } else {
-                    None
+                if !globset.is_match(rel) {
+                    return None;
                 }
+                check_path_allowed(&paths_cfg, &root, e.path()).ok()?;
+                Some(rel.to_string_lossy().into_owned())
             })
             .collect();
 
@@ -152,11 +143,21 @@ impl GrepGlobMcp {
     }
 
     /// Search file contents for a regex pattern.
-    /// Returns one matching file path per line (not the matched lines themselves).
-    /// Optionally restricts the search to files whose paths match a glob.
-    #[tool(description = "Search file contents for a regex and return matching file paths.")]
+    /// Hidden directories and paths listed in .claude/glob-exclude are skipped.
+    /// Only searches files permitted by .claude/paths.
+    /// By default returns one matching file path per line; set include_lines=true
+    /// to get `path:lineno: content` output for every matched line.
+    #[tool(
+        description = "Search file contents for a regex. Returns matching file paths, or matched lines when include_lines is true."
+    )]
     fn grep(&self, Parameters(params): Parameters<GrepParams>) -> CallToolResult {
         let root = project_dir();
+        let env = HookEnv::from_claude_dir(&root.join(".claude"), None);
+        let paths_cfg = match env.paths_config() {
+            Ok(s) => s,
+            Err(e) => return CallToolResult::error(vec![ContentBlock::text(e)]),
+        };
+        let exclude_cfg = env.glob_exclude_config().unwrap_or_default();
         let search_root = match params.path.as_deref() {
             Some(p) => match resolve_safe(&root, p) {
                 Ok(r) => r,
@@ -183,8 +184,17 @@ impl GrepGlobMcp {
             None => None,
         };
 
-        let mut matches: Vec<String> = WalkDir::new(&search_root)
+        let include_lines = params.include_lines.unwrap_or(false);
+
+        let mut output: Vec<String> = WalkDir::new(&search_root)
             .into_iter()
+            .filter_entry(|e| {
+                if e.file_type().is_dir() {
+                    !glob_exclude::is_excluded(&exclude_cfg, &root, e.path())
+                } else {
+                    true
+                }
+            })
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().is_file())
             .filter_map(|e| {
@@ -196,21 +206,38 @@ impl GrepGlobMcp {
                     }
                 }
 
+                check_path_allowed(&paths_cfg, &root, e.path()).ok()?;
+
                 if is_binary(e.path()) {
                     return None;
                 }
 
                 let contents = fs::read_to_string(e.path()).ok()?;
-                if re.is_match(&contents) {
-                    Some(rel.to_string_lossy().into_owned())
+                let rel_str = rel.to_string_lossy();
+
+                if include_lines {
+                    let lines: Vec<String> = contents
+                        .lines()
+                        .enumerate()
+                        .filter_map(|(i, line)| {
+                            if re.is_match(line) {
+                                Some(format!("{}:{}: {}", rel_str, i + 1, line))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if lines.is_empty() { None } else { Some(lines.join("\n")) }
+                } else if re.is_match(&contents) {
+                    Some(rel_str.into_owned())
                 } else {
                     None
                 }
             })
             .collect();
 
-        matches.sort();
-        CallToolResult::success(vec![ContentBlock::text(matches.join("\n"))])
+        output.sort();
+        CallToolResult::success(vec![ContentBlock::text(output.join("\n"))])
     }
 }
 

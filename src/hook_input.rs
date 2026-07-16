@@ -50,8 +50,6 @@ pub struct PreToolUseInput {
 pub enum ToolInput {
     Bash(BashInput),
     Read(ReadInput),
-    Grep(GrepInput),
-    Glob(GlobInput),
     WebFetch(WebFetchInput),
     Edit(EditInput),
     Write(WriteInput),
@@ -76,24 +74,6 @@ pub struct ReadInput {
     pub file_path: String,
     pub offset: Option<u64>,
     pub limit: Option<u64>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GrepInput {
-    pub pattern: String,
-    /// Search root; defaults to cwd when absent.
-    pub path: Option<String>,
-    /// Glob filter applied to the search root.
-    pub glob: Option<String>,
-    /// `"content"` or `"files"`.
-    pub output_mode: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GlobInput {
-    pub pattern: String,
-    /// Search root; defaults to cwd when absent.
-    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -159,20 +139,6 @@ impl HookCheck for ReadInput {
     }
 }
 
-impl HookCheck for GrepInput {
-    fn check(&self, project_dir: &Path, env: &mut HookEnv, _: ()) {
-        let path = self.path.as_deref().unwrap_or(".");
-        hooks::paths::check(project_dir, env, Path::new(path));
-    }
-}
-
-impl HookCheck for GlobInput {
-    fn check(&self, project_dir: &Path, env: &mut HookEnv, _: ()) {
-        let path = self.path.as_deref().unwrap_or(".");
-        hooks::paths::check(project_dir, env, Path::new(path));
-    }
-}
-
 impl HookCheck for WebFetchInput {
     fn check(&self, project_dir: &Path, env: &mut HookEnv, _: ()) {
         hooks::webfetch::check(project_dir, env, &self.url);
@@ -196,8 +162,6 @@ impl HookCheck for ToolInput {
         match self {
             ToolInput::Bash(i) => i.check(project_dir, env, ()),
             ToolInput::Read(i) => i.check(project_dir, env, ()),
-            ToolInput::Grep(i) => i.check(project_dir, env, ()),
-            ToolInput::Glob(i) => i.check(project_dir, env, ()),
             ToolInput::WebFetch(i) => i.check(project_dir, env, ()),
             ToolInput::Edit(i) => i.check(project_dir, env, ()),
             ToolInput::Write(i) => i.check(project_dir, env, ()),

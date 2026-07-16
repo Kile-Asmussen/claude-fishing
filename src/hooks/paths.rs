@@ -1,8 +1,20 @@
 use globset::GlobBuilder;
-use std::path::Path;
+use std::{fs, path::Path};
 
 use super::config;
 use super::env::HookEnv;
+
+pub fn load_config(claude_dir: &Path) -> Result<String, String> {
+    let path = claude_dir.join("paths");
+    let mut out = fs::read_to_string(&path).map_err(|e| format!("could not read {path:?}: {e}"))?;
+    if let Ok(local) = fs::read_to_string(claude_dir.join("paths-local")) {
+        if !local.is_empty() {
+            out.push('\n');
+            out.push_str(&local);
+        }
+    }
+    Ok(out)
+}
 
 pub fn check(project_dir: &Path, env: &mut HookEnv, path: &Path) {
     let contents = match env.paths_config() {
@@ -10,16 +22,43 @@ pub fn check(project_dir: &Path, env: &mut HookEnv, path: &Path) {
         Err(reason) => return env.deny(reason),
     };
 
-    let patterns = config::partition(&contents);
+    match is_path_allowed(&contents, project_dir, path) {
+        Ok(true) => env.allow(format!("{path:?} permitted by paths config")),
+        Ok(false) => env.deny(format!(
+            "{path:?} not permitted by paths config\n\
+             (prefix / match absolute paths, ./ or no prefix match relative to project directory)\n\
+             ask the user to add a matching pattern to .claude/paths"
+        )),
+        Err(e) => env.deny(e),
+    }
+}
 
-    config::check(
-        env,
-        &patterns,
-        &path.to_string_lossy(),
-        "no allowed paths in .claude/paths",
-        "(prefix / match absolute paths, ./ or no prefix match relative to project directory)\n",
-        |p| match_pattern(p, project_dir, path),
-    );
+/// Pure predicate: returns `Ok(true)` if `path` is allowed by `paths_config`,
+/// `Ok(false)` if denied, `Err` if a pattern fails to compile.
+pub fn is_path_allowed(
+    paths_config: &str,
+    project_dir: &Path,
+    path: &Path,
+) -> Result<bool, String> {
+    let patterns = config::partition(paths_config);
+
+    for p in &patterns.deny {
+        if match_pattern(p, project_dir, path)? {
+            return Ok(false);
+        }
+    }
+
+    if patterns.allow.is_empty() {
+        return Ok(false);
+    }
+
+    for p in &patterns.allow {
+        if match_pattern(p, project_dir, path)? {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 fn match_pattern(pattern: &str, project_dir: &Path, path: &Path) -> Result<bool, String> {
@@ -143,5 +182,38 @@ mod tests {
 
         assert_eq!(d1, Some(PreToolDecision::Deny));
         assert_eq!(d1, d2);
+    }
+
+    #[test]
+    fn load_config_merges_local_file() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let claude = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        std::fs::write(claude.join("paths"), "**\n").unwrap();
+        std::fs::write(claude.join("paths-local"), "!.env\n").unwrap();
+        let combined = super::load_config(&claude).unwrap();
+        assert!(combined.contains("**"));
+        assert!(combined.contains("!.env"));
+    }
+
+    #[test]
+    fn load_config_missing_local_is_ok() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let claude = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        std::fs::write(claude.join("paths"), "**\n").unwrap();
+        let combined = super::load_config(&claude).unwrap();
+        assert!(combined.contains("**"));
+    }
+
+    #[test]
+    fn load_config_missing_base_is_error() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let claude = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        assert!(super::load_config(&claude).is_err());
     }
 }

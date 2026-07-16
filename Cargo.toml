@@ -3,9 +3,13 @@ name = "claude-fishing"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "claude_fishing"
+path = "src/lib.rs"
+
 [[bin]]
 name = "fishing"
-path = "src/main.rs"
+path = "src/fishing/main.rs"
 
 [[bin]]
 name = "grep-glob-mcp"
@@ -26,6 +30,9 @@ strum   = "0.28.0"
 strum_macros = "0.28.0"
 
 tokio = { version = "1.52.3", features = [ "fs", "macros", "rt-multi-thread" ] }
+
+[dev-dependencies]
+tempfile = "3"
 rmcp = { version = "2.0.0", features = ["transport-io"] }
 rmcp-macros = "2.0.0"
 schemars = "1.2.1"

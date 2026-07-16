@@ -1,6 +1,6 @@
 use rootcause::report;
 use serde::{Deserialize, Serialize};
-use std::{io::Write, path::PathBuf};
+use std::{io::Write, path::{Path, PathBuf}};
 
 #[derive(Default, Debug, Clone)]
 pub enum HookConfig {
@@ -100,13 +100,38 @@ impl HookResponse {
 #[derive(Default, Debug, Clone)]
 pub struct HookEnv {
     pub bash: HookConfig,
+    pub bash_local: HookConfig,
     pub paths: HookConfig,
+    pub paths_local: HookConfig,
     pub webfetch: HookConfig,
+    pub webfetch_local: HookConfig,
+    pub glob_exclude: HookConfig,
+    pub glob_exclude_local: HookConfig,
     pub settings: HookConfig,
     pub settings_local: HookConfig,
     pub log_path: Option<PathBuf>,
     pub log_buf: String,
     pub response: Option<HookResponse>,
+}
+
+impl HookEnv {
+    /// Construct from a `.claude/` directory path, wiring all config files.
+    pub fn from_claude_dir(claude: &Path, log_path: Option<PathBuf>) -> Self {
+        HookEnv {
+            bash: HookConfig::File(claude.join("bash")),
+            bash_local: HookConfig::File(claude.join("bash-local")),
+            paths: HookConfig::File(claude.join("paths")),
+            paths_local: HookConfig::File(claude.join("paths-local")),
+            webfetch: HookConfig::File(claude.join("webfetch")),
+            webfetch_local: HookConfig::File(claude.join("webfetch-local")),
+            glob_exclude: HookConfig::File(claude.join("glob-exclude")),
+            glob_exclude_local: HookConfig::File(claude.join("glob-exclude-local")),
+            settings: HookConfig::File(claude.join("settings.json")),
+            settings_local: HookConfig::File(claude.join("settings.local.json")),
+            log_path,
+            ..Default::default()
+        }
+    }
 }
 
 impl HookEnv {
@@ -140,24 +165,38 @@ impl HookEnv {
             webfetch: HookConfig::Direct(webfetch.into()),
             settings: HookConfig::Direct(settings.clone()),
             settings_local: HookConfig::Direct(settings),
-            log_path: None,
-            log_buf: String::new(),
-            response: None,
+            ..Default::default()
         }
     }
 
     // ── Config accessors ──────────────────────────────────────────────────────
 
+    /// Load `base`, then append `local` if it is readable (missing local file is not an error).
+    fn load_merged(base: &HookConfig, local: &HookConfig, label: &str) -> Result<String, String> {
+        let mut out = base.load(label)?;
+        if let Ok(extra) = local.load(label) {
+            if !extra.is_empty() {
+                out.push('\n');
+                out.push_str(&extra);
+            }
+        }
+        Ok(out)
+    }
+
     pub fn bash_config(&self) -> Result<String, String> {
-        self.bash.load("bash config")
+        Self::load_merged(&self.bash, &self.bash_local, "bash config")
     }
 
     pub fn paths_config(&self) -> Result<String, String> {
-        self.paths.load("paths config")
+        Self::load_merged(&self.paths, &self.paths_local, "paths config")
     }
 
     pub fn webfetch_config(&self) -> Result<String, String> {
-        self.webfetch.load("webfetch config")
+        Self::load_merged(&self.webfetch, &self.webfetch_local, "webfetch config")
+    }
+
+    pub fn glob_exclude_config(&self) -> Result<String, String> {
+        Self::load_merged(&self.glob_exclude, &self.glob_exclude_local, "glob-exclude config")
     }
 
     pub fn settings_json(&self) -> Result<String, String> {
@@ -325,5 +364,38 @@ mod tests {
         let mut env = HookEnv::test("", "", "", "");
         env.allow("first");
         env.deny("second");
+    }
+
+    #[test]
+    fn load_merged_missing_local_is_ok() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("base"), "allow_this\n").unwrap();
+        let base = HookConfig::File(dir.path().join("base"));
+        let local = HookConfig::File(dir.path().join("local-missing"));
+        let result = HookEnv::load_merged(&base, &local, "test").unwrap();
+        assert_eq!(result.trim(), "allow_this");
+    }
+
+    #[test]
+    fn load_merged_appends_local() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("base"), "base_pattern\n").unwrap();
+        std::fs::write(dir.path().join("local"), "local_pattern\n").unwrap();
+        let base = HookConfig::File(dir.path().join("base"));
+        let local = HookConfig::File(dir.path().join("local"));
+        let result = HookEnv::load_merged(&base, &local, "test").unwrap();
+        assert!(result.contains("base_pattern"));
+        assert!(result.contains("local_pattern"));
+    }
+
+    #[test]
+    fn load_merged_missing_base_is_error() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let base = HookConfig::File(dir.path().join("missing-base"));
+        let local = HookConfig::File(dir.path().join("missing-local"));
+        assert!(HookEnv::load_merged(&base, &local, "test").is_err());
     }
 }

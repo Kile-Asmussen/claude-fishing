@@ -1,6 +1,7 @@
 pub mod bash;
 pub mod config;
 pub mod env;
+pub mod glob_exclude;
 pub mod init;
 pub mod paths;
 pub mod rotate_log;

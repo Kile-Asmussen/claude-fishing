@@ -4,6 +4,7 @@
     "allow": [
       "Edit(CLAUDE.md)",
       "Edit(TODO.md)",
+      "Write(TODO.md)",
       "Edit(Cargo.toml)",
       "Edit(.cargo/config.toml)",
       "Edit(build.rs)",
