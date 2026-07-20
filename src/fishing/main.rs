@@ -18,10 +18,6 @@ use strum_macros::{EnumIs, IntoStaticStr};
 /// Claude Code hook enforcement suite
 #[derive(Parser)]
 struct Cli {
-    /// Log file path (default: $CLAUDE_PROJECT_DIR/.claude/log)
-    #[arg(long, global = true)]
-    log: Option<PathBuf>,
-
     /// Use the current working directory instead of $CLAUDE_PROJECT_DIR
     #[arg(long, global = true)]
     cwd: bool,
@@ -47,9 +43,12 @@ enum Command {
     RotateLog,
     /// Create missing config files under .claude/ with example contents
     Init {
-        /// Also inject hooks into .claude/settings.json using this command prefix
-        #[arg(long)]
-        inject: Option<String>,
+        /// Command used to invoke the hooks binary in injected hook entries
+        #[arg(long, default_value = "fishing")]
+        inject: String,
+        /// Command used to invoke the MCP binary in the injected mcpServers entry
+        #[arg(long, default_value = "fishing-grep-glob-mcp")]
+        mcp: String,
     },
     /// CwdChanged hook that blocks all cwd changes
     CwdChanged,
@@ -72,7 +71,7 @@ fn run() -> Result<(), rootcause::Report> {
 
     let claude = project_dir.join(".claude");
 
-    let log: Option<PathBuf> = cli.log.or_else(|| Some(claude.join("fishing.log")));
+    let log = Some(claude.join("fishing.log"));
 
     let mut env = HookEnv::from_claude_dir(&claude, log.clone());
 
@@ -93,8 +92,8 @@ fn run() -> Result<(), rootcause::Report> {
             }
         }
 
-        Command::Init { inject } => {
-            let r = hooks::init::init(&project_dir, &mut env, inject.as_deref());
+        Command::Init { inject, mcp } => {
+            let r = hooks::init::init(&project_dir, &mut env, &inject, &mcp);
             env.report(r, "Initialization failed")?;
         }
 

@@ -3,15 +3,18 @@ use std::path::Path;
 use super::env::HookEnv;
 use crate::defaults;
 
-pub fn init(project_dir: &Path, env: &mut HookEnv, inject: Option<&str>) -> Result<(), String> {
+pub fn init(project_dir: &Path, env: &mut HookEnv, inject: &str, mcp: &str) -> Result<(), String> {
     create_missing_configs(project_dir)?;
+    write_readme(project_dir)?;
     update_gitignore(project_dir)?;
-
-    if let Some(cmd) = inject {
-        inject_hooks(env, cmd)?;
-    }
-
+    inject_hooks(project_dir, env, inject, mcp)?;
     Ok(())
+}
+
+fn write_readme(project_dir: &Path) -> Result<(), String> {
+    let path = project_dir.join(defaults::FISHING_README_PATH);
+    std::fs::write(&path, defaults::FISHING_README_CONTENT)
+        .map_err(|e| format!("failed to write {path:?}: {e}"))
 }
 
 fn create_missing_configs(project_dir: &Path) -> Result<(), String> {
@@ -39,6 +42,7 @@ fn update_gitignore(project_dir: &Path) -> Result<(), String> {
     if !appended.ends_with('\n') && !appended.is_empty() {
         appended.push('\n');
     }
+    appended.push_str("\n# fishing config files:\n");
     for entry in missing {
         appended.push_str(entry);
         appended.push('\n');
@@ -46,7 +50,46 @@ fn update_gitignore(project_dir: &Path) -> Result<(), String> {
     std::fs::write(&gitignore, appended).map_err(|e| format!("failed to update .gitignore: {e}"))
 }
 
-fn inject_hooks(env: &mut HookEnv, cmd: &str) -> Result<(), String> {
+fn inject_hooks(
+    project_dir: &Path,
+    env: &mut HookEnv,
+    cmd: &str,
+    mcp_cmd: &str,
+) -> Result<(), String> {
+    inject_mcp(project_dir, mcp_cmd)?;
+    inject_hook_entries(env, cmd)
+}
+
+fn inject_mcp(project_dir: &Path, mcp_cmd: &str) -> Result<(), String> {
+    let path = project_dir.join(".mcp.json");
+    let raw = std::fs::read_to_string(&path).unwrap_or_else(|_| "{}".to_string());
+    let mut root: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!(".mcp.json is not valid JSON: {e}"))?;
+
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| ".mcp.json root is not an object".to_string())?;
+
+    let mcp_servers = obj
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| ".mcp.json mcpServers field is not an object".to_string())?;
+
+    mcp_servers.entry("grep-glob").or_insert_with(|| {
+        serde_json::json!({
+            "type": "stdio",
+            "command": mcp_cmd.split_whitespace().next().unwrap_or(mcp_cmd),
+            "args": mcp_cmd.split_whitespace().skip(1).collect::<Vec<_>>()
+        })
+    });
+
+    let out = serde_json::to_string_pretty(&root)
+        .map_err(|e| format!("failed to serialize .mcp.json: {e}"))?;
+    std::fs::write(&path, out).map_err(|e| format!("failed to write .mcp.json: {e}"))
+}
+
+fn inject_hook_entries(env: &mut HookEnv, cmd: &str) -> Result<(), String> {
     let raw = env.settings_json()?;
 
     let mut root: serde_json::Value =
@@ -56,23 +99,23 @@ fn inject_hooks(env: &mut HookEnv, cmd: &str) -> Result<(), String> {
         .as_object_mut()
         .ok_or_else(|| "settings.json root is not an object".to_string())?;
 
-    // Register the MCP server (idempotent — keeps existing entry if already present).
-    let mcp_servers = obj
-        .entry("mcpServers")
+    let permissions = obj
+        .entry("permissions")
         .or_insert_with(|| serde_json::json!({}))
         .as_object_mut()
-        .ok_or_else(|| "settings.json mcpServers field is not an object".to_string())?;
+        .ok_or_else(|| "settings.json permissions field is not an object".to_string())?;
 
-    mcp_servers.entry("grep-glob").or_insert_with(|| {
-        serde_json::json!({
-            "type": "stdio",
-            "command": cmd.split_whitespace().next().unwrap_or(cmd),
-            "args": cmd.split_whitespace()
-                .skip(1)
-                .chain(std::iter::once("grep-glob-mcp"))
-                .collect::<Vec<_>>()
-        })
-    });
+    let allow = permissions
+        .entry("allow")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .ok_or_else(|| "settings.json permissions.allow field is not an array".to_string())?;
+
+    for tool in ["mcp__grep-glob__glob", "mcp__grep-glob__grep"] {
+        if !allow.iter().any(|v| v.as_str() == Some(tool)) {
+            allow.push(serde_json::json!(tool));
+        }
+    }
 
     let hooks = obj
         .entry("hooks")
@@ -121,53 +164,80 @@ mod tests {
 
     #[test]
     fn init_creates_glob_exclude_config() {
-        let dir = TempDir::new().unwrap();
-        init(dir.path(), &mut HookEnv::default(), None).unwrap();
-        assert!(dir.path().join(".claude/glob-exclude").exists());
+        let (dir, mut env) = setup("{}");
+        init(dir.path(), &mut env, "fishing", "fishing-grep-glob-mcp").unwrap();
+        assert!(dir.path().join(".claude/fishing.glob-exclude.txt").exists());
     }
 
     #[test]
     fn init_adds_glob_exclude_local_to_gitignore() {
-        let dir = TempDir::new().unwrap();
-        init(dir.path(), &mut HookEnv::default(), None).unwrap();
+        let (dir, mut env) = setup("{}");
+        init(dir.path(), &mut env, "fishing", "fishing-grep-glob-mcp").unwrap();
         let gitignore = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
-        assert!(gitignore.lines().any(|l| l.trim() == ".claude/glob-exclude-local"));
+        assert!(
+            gitignore
+                .lines()
+                .any(|l| l.trim() == ".claude/fishing.glob-exclude.local.txt")
+        );
     }
 
     #[test]
     fn inject_registers_mcp_server() {
-        let (_dir, mut env) = setup("{}");
-        inject_hooks(&mut env, "/usr/local/bin/fishing").unwrap();
-        let out: serde_json::Value =
-            serde_json::from_str(&env.settings_json().unwrap()).unwrap();
+        let (dir, mut env) = setup("{}");
+        inject_hooks(dir.path(), &mut env, "/usr/local/bin/fishing", "/usr/local/bin/fishing-grep-glob-mcp").unwrap();
+        let mcp_raw = fs::read_to_string(dir.path().join(".mcp.json")).unwrap();
+        let out: serde_json::Value = serde_json::from_str(&mcp_raw).unwrap();
         assert_eq!(out["mcpServers"]["grep-glob"]["type"], "stdio");
-        assert_eq!(out["mcpServers"]["grep-glob"]["command"], "/usr/local/bin/fishing");
-        let args = out["mcpServers"]["grep-glob"]["args"].as_array().unwrap();
-        assert!(args.iter().any(|a| a == "grep-glob-mcp"));
+        assert_eq!(
+            out["mcpServers"]["grep-glob"]["command"],
+            "/usr/local/bin/fishing-grep-glob-mcp"
+        );
     }
 
     #[test]
     fn inject_mcp_is_idempotent() {
-        let (_dir, mut env) = setup("{}");
-        inject_hooks(&mut env, "/usr/local/bin/fishing").unwrap();
-        let mid = env.settings_json().unwrap();
-        // write mid back so second call reads it
-        let mut env2 = env.clone();
-        // re-use the same HookConfig::File — already written, just call inject again
-        inject_hooks(&mut env2, "/usr/local/bin/fishing").unwrap();
-        let out: serde_json::Value =
-            serde_json::from_str(&env2.settings_json().unwrap()).unwrap();
-        // should still be exactly one grep-glob entry
+        let (dir, mut env) = setup("{}");
+        inject_hooks(dir.path(), &mut env, "/usr/local/bin/fishing", "/usr/local/bin/fishing-grep-glob-mcp").unwrap();
+        inject_hooks(dir.path(), &mut env, "/usr/local/bin/fishing", "/usr/local/bin/fishing-grep-glob-mcp").unwrap();
+        let mcp_raw = fs::read_to_string(dir.path().join(".mcp.json")).unwrap();
+        let out: serde_json::Value = serde_json::from_str(&mcp_raw).unwrap();
         assert!(out["mcpServers"]["grep-glob"].is_object());
-        let _ = mid; // used
+        // mcpServers should contain exactly one entry
+        assert_eq!(out["mcpServers"].as_object().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn inject_registers_mcp_tool_permissions() {
+        let (dir, mut env) = setup("{}");
+        inject_hooks(dir.path(), &mut env, "fishing", "fishing-grep-glob-mcp").unwrap();
+        let out: serde_json::Value = serde_json::from_str(&env.settings_json().unwrap()).unwrap();
+        let allow = out["permissions"]["allow"].as_array().unwrap();
+        let tools: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
+        assert!(tools.contains(&"mcp__grep-glob__glob"));
+        assert!(tools.contains(&"mcp__grep-glob__grep"));
+    }
+
+    #[test]
+    fn inject_hooks_is_idempotent() {
+        let (dir, mut env) = setup("{}");
+        inject_hooks(dir.path(), &mut env, "fishing", "fishing-grep-glob-mcp").unwrap();
+        inject_hooks(dir.path(), &mut env, "fishing", "fishing-grep-glob-mcp").unwrap();
+        let out: serde_json::Value = serde_json::from_str(&env.settings_json().unwrap()).unwrap();
+        assert_eq!(out["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
+        assert_eq!(out["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
+        assert_eq!(out["hooks"]["ConfigChange"].as_array().unwrap().len(), 1);
+        let allow = out["permissions"]["allow"].as_array().unwrap();
+        let glob_count = allow.iter().filter(|v| v.as_str() == Some("mcp__grep-glob__glob")).count();
+        let grep_count = allow.iter().filter(|v| v.as_str() == Some("mcp__grep-glob__grep")).count();
+        assert_eq!(glob_count, 1);
+        assert_eq!(grep_count, 1);
     }
 
     #[test]
     fn inject_registers_pre_tool_use_hook_without_glob_grep() {
-        let (_dir, mut env) = setup("{}");
-        inject_hooks(&mut env, "fishing").unwrap();
-        let out: serde_json::Value =
-            serde_json::from_str(&env.settings_json().unwrap()).unwrap();
+        let (dir, mut env) = setup("{}");
+        inject_hooks(dir.path(), &mut env, "fishing", "fishing-grep-glob-mcp").unwrap();
+        let out: serde_json::Value = serde_json::from_str(&env.settings_json().unwrap()).unwrap();
         let hooks = out["hooks"]["PreToolUse"].as_array().unwrap();
         let matcher = hooks[0]["matcher"].as_str().unwrap();
         assert!(matcher.contains("Bash"));
@@ -178,10 +248,9 @@ mod tests {
 
     #[test]
     fn inject_registers_config_change_hook() {
-        let (_dir, mut env) = setup("{}");
-        inject_hooks(&mut env, "fishing").unwrap();
-        let out: serde_json::Value =
-            serde_json::from_str(&env.settings_json().unwrap()).unwrap();
+        let (dir, mut env) = setup("{}");
+        inject_hooks(dir.path(), &mut env, "fishing", "fishing-grep-glob-mcp").unwrap();
+        let out: serde_json::Value = serde_json::from_str(&env.settings_json().unwrap()).unwrap();
         let hooks = out["hooks"]["ConfigChange"].as_array().unwrap();
         let cmd = hooks[0]["hooks"][0]["command"].as_str().unwrap();
         assert!(cmd.contains("config-change"));
@@ -195,6 +264,26 @@ fn append_hook(
     command: &str,
 ) {
     let array = hooks.entry(event).or_insert_with(|| serde_json::json!([]));
+
+    if let Some(arr) = array.as_array() {
+        let already_present = arr.iter().any(|entry| {
+            entry
+                .get("hooks")
+                .and_then(|h| h.as_array())
+                .map(|h| {
+                    h.iter().any(|hook| {
+                        hook.get("command")
+                            .and_then(|c| c.as_str())
+                            .map(|c| c == command)
+                            .unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false)
+        });
+        if already_present {
+            return;
+        }
+    }
 
     let entry = if let Some(m) = matcher {
         serde_json::json!({

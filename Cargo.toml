@@ -12,7 +12,7 @@ name = "fishing"
 path = "src/fishing/main.rs"
 
 [[bin]]
-name = "grep-glob-mcp"
+name = "fishing-grep-glob-mcp"
 path = "src/grep-glob/main.rs"
 
 [dependencies]

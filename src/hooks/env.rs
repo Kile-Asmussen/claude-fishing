@@ -1,6 +1,9 @@
 use rootcause::report;
 use serde::{Deserialize, Serialize};
-use std::{io::Write, path::{Path, PathBuf}};
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 #[derive(Default, Debug, Clone)]
 pub enum HookConfig {
@@ -118,14 +121,14 @@ impl HookEnv {
     /// Construct from a `.claude/` directory path, wiring all config files.
     pub fn from_claude_dir(claude: &Path, log_path: Option<PathBuf>) -> Self {
         HookEnv {
-            bash: HookConfig::File(claude.join("bash")),
-            bash_local: HookConfig::File(claude.join("bash-local")),
-            paths: HookConfig::File(claude.join("paths")),
-            paths_local: HookConfig::File(claude.join("paths-local")),
-            webfetch: HookConfig::File(claude.join("webfetch")),
-            webfetch_local: HookConfig::File(claude.join("webfetch-local")),
-            glob_exclude: HookConfig::File(claude.join("glob-exclude")),
-            glob_exclude_local: HookConfig::File(claude.join("glob-exclude-local")),
+            bash: HookConfig::File(claude.join("fishing.bash.txt")),
+            bash_local: HookConfig::File(claude.join("fishing.bash.local.txt")),
+            paths: HookConfig::File(claude.join("fishing.paths.txt")),
+            paths_local: HookConfig::File(claude.join("fishing.paths.local.txt")),
+            webfetch: HookConfig::File(claude.join("fishing.webfetch.txt")),
+            webfetch_local: HookConfig::File(claude.join("fishing.webfetch.local.txt")),
+            glob_exclude: HookConfig::File(claude.join("fishing.glob-exclude.txt")),
+            glob_exclude_local: HookConfig::File(claude.join("fishing.glob-exclude.local.txt")),
             settings: HookConfig::File(claude.join("settings.json")),
             settings_local: HookConfig::File(claude.join("settings.local.json")),
             log_path,
@@ -196,7 +199,11 @@ impl HookEnv {
     }
 
     pub fn glob_exclude_config(&self) -> Result<String, String> {
-        Self::load_merged(&self.glob_exclude, &self.glob_exclude_local, "glob-exclude config")
+        Self::load_merged(
+            &self.glob_exclude,
+            &self.glob_exclude_local,
+            "glob-exclude config",
+        )
     }
 
     pub fn settings_json(&self) -> Result<String, String> {

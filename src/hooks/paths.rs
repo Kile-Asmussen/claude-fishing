@@ -22,15 +22,16 @@ pub fn check(project_dir: &Path, env: &mut HookEnv, path: &Path) {
         Err(reason) => return env.deny(reason),
     };
 
-    match is_path_allowed(&contents, project_dir, path) {
-        Ok(true) => env.allow(format!("{path:?} permitted by paths config")),
-        Ok(false) => env.deny(format!(
-            "{path:?} not permitted by paths config\n\
-             (prefix / match absolute paths, ./ or no prefix match relative to project directory)\n\
-             ask the user to add a matching pattern to .claude/paths"
-        )),
-        Err(e) => env.deny(e),
-    }
+    let note = "(prefix / matches absolute paths, ./ or no prefix matches relative to project directory)\n";
+    let patterns = config::partition(&contents);
+    config::check(
+        env,
+        &patterns,
+        &path.to_string_lossy(),
+        &format!("no path patterns configured; {path:?} cannot be accessed"),
+        note,
+        |p| match_pattern(p, project_dir, path),
+    );
 }
 
 /// Pure predicate: returns `Ok(true)` if `path` is allowed by `paths_config`,
@@ -110,6 +111,23 @@ mod tests {
         let mut env = env("./**/*\n!.env");
         super::check(Path::new("."), &mut env, Path::new(".env"));
         assert_eq!(env.decision(), Some(&PreToolDecision::Deny));
+    }
+
+    #[test]
+    fn deny_pattern_message_distinguishes_from_unmatched() {
+        // deny pattern matched → message must mention "deny pattern", not "not matched"
+        let mut env = env("./**/*\n!.env");
+        super::check(Path::new("/project"), &mut env, Path::new("/project/.env"));
+        if let Some(crate::hooks::env::HookResponse::HookSpecificOutput {
+            permission_decision_reason,
+            ..
+        }) = env.response()
+        {
+            assert!(
+                permission_decision_reason.contains("deny pattern"),
+                "expected 'deny pattern' in reason, got: {permission_decision_reason}"
+            );
+        }
     }
 
     #[test]

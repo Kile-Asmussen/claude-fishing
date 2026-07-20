@@ -31,65 +31,6 @@
     ],
     "defaultMode": "dontAsk"
   },
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "mv -f \"$CLAUDE_PROJECT_DIR/.claude/log\" \"$CLAUDE_PROJECT_DIR/.claude/log~\" || true"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Read|Glob|Grep",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hook-restrict-read-grep-glob-paths.py\" \"$CLAUDE_PROJECT_DIR/.claude/log\" 1>&2 || exit 2"
-          }
-        ]
-      },
-      {
-        "matcher": "Read|Grep",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hook-restrict-reads-forbidden-by-globs.py\" \"$CLAUDE_PROJECT_DIR/.claude/log\" 1>&2 || exit 2"
-          }
-        ]
-      },
-      {
-        "matcher": "WebFetch",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hook-restrict-webfetch-urls.py\" \"$CLAUDE_PROJECT_DIR/.claude/log\" 1>&2 || exit 2"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hook-restrict-bash-commands.py\" \"$CLAUDE_PROJECT_DIR/.claude/log\" 1>&2 || exit 2"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hook-restrict-write-edit.py\" \"$CLAUDE_PROJECT_DIR/.claude/log\" 1>&2 || exit 2"
-          }
-        ]
-      }
-    ]
-  },
   "enabledPlugins": {
     "rust-analyzer-lsp@claude-plugins-official": true
   }

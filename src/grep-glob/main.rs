@@ -1,20 +1,16 @@
-use std::{
-    fs,
-    io::Read as _,
-    path::Path,
-};
+use std::{fs, io::Read as _, path::Path};
 
+use chrono::Local;
 use claude_fishing::hooks::env::HookEnv;
 use claude_fishing::hooks::glob_exclude;
 use claude_fishing::hooks::paths::is_path_allowed;
 use claude_fishing::util::{project_dir, resolve_safe};
-use chrono::Local;
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use regex::Regex;
 use rmcp::{
     ServerHandler,
     handler::server::wrapper::Parameters,
-    model::{CallToolResult, ContentBlock, Implementation, ServerInfo},
+    model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerInfo},
     schemars,
     service::serve_server,
     tool, tool_handler, tool_router,
@@ -44,8 +40,12 @@ fn compile_glob(pattern: &str) -> Result<GlobSet, String> {
     let glob = GlobBuilder::new(pattern)
         .literal_separator(true)
         .build()
-        .map_err(|e| format!("invalid glob pattern {pattern:?}: {e}\n\
-                               use ** to match across path separators, * for a single segment"))?;
+        .map_err(|e| {
+            format!(
+                "invalid glob pattern {pattern:?}: {e}\n\
+                               use ** to match across path separators, * for a single segment"
+            )
+        })?;
     let mut builder = GlobSetBuilder::new();
     builder.add(glob);
     builder
@@ -119,7 +119,6 @@ impl GrepGlobMcp {
         ));
 
         let result: Result<String, String> = (|| {
-            let paths_cfg = env.paths_config().map_err(|e| { env.log(format!("ERROR: {e}")); e })?;
             let exclude_cfg = env.glob_exclude_config().unwrap_or_default();
             let search_root = match params.path.as_deref() {
                 Some(p) => resolve_safe(&root, p).map_err(|e| {
@@ -130,7 +129,10 @@ impl GrepGlobMcp {
             };
 
             let pattern = params.pattern.as_deref().unwrap_or("**/*");
-            let globset = compile_glob(pattern).map_err(|e| { env.log(format!("ERROR: {e}")); e })?;
+            let globset = compile_glob(pattern).map_err(|e| {
+                env.log(format!("ERROR: {e}"));
+                e
+            })?;
 
             let mut matches: Vec<String> = WalkDir::new(&search_root)
                 .into_iter()
@@ -148,7 +150,6 @@ impl GrepGlobMcp {
                     if !globset.is_match(rel) {
                         return None;
                     }
-                    check_path_allowed(&paths_cfg, &root, e.path()).ok()?;
                     Some(rel.to_string_lossy().into_owned())
                 })
                 .collect();
@@ -186,7 +187,10 @@ impl GrepGlobMcp {
         ));
 
         let result: Result<String, String> = (|| {
-            let paths_cfg = env.paths_config().map_err(|e| { env.log(format!("ERROR: {e}")); e })?;
+            let paths_cfg = env.paths_config().map_err(|e| {
+                env.log(format!("ERROR: {e}"));
+                e
+            })?;
             let exclude_cfg = env.glob_exclude_config().unwrap_or_default();
             let search_root = match params.path.as_deref() {
                 Some(p) => resolve_safe(&root, p).map_err(|e| {
@@ -207,7 +211,10 @@ impl GrepGlobMcp {
             })?;
 
             let include_glob = match params.include.as_deref() {
-                Some(g) => Some(compile_glob(g).map_err(|e| { env.log(format!("ERROR: {e}")); e })?),
+                Some(g) => Some(compile_glob(g).map_err(|e| {
+                    env.log(format!("ERROR: {e}"));
+                    e
+                })?),
                 None => None,
             };
 
@@ -254,7 +261,11 @@ impl GrepGlobMcp {
                                 }
                             })
                             .collect();
-                        if lines.is_empty() { None } else { Some(lines.join("\n")) }
+                        if lines.is_empty() {
+                            None
+                        } else {
+                            Some(lines.join("\n"))
+                        }
                     } else if re.is_match(&contents) {
                         Some(rel_str.into_owned())
                     } else {
@@ -280,7 +291,8 @@ impl GrepGlobMcp {
 impl ServerHandler for GrepGlobMcp {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
-        info.server_info = Implementation::new("grep-glob-mcp", env!("CARGO_PKG_VERSION"));
+        info.server_info = Implementation::new("fishing-grep-glob-mcp", env!("CARGO_PKG_VERSION"));
+        info.capabilities = ServerCapabilities::builder().enable_tools().build();
         info
     }
 }
