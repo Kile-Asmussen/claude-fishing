@@ -1,5 +1,42 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true
+  },
+  "hooks": {
+    "ConfigChange": [
+      {
+        "hooks": [
+          {
+            "command": "fishing config-change",
+            "type": "command"
+          }
+        ],
+        "matcher": "project_settings|local_settings|user_settings"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "fishing pre-tool-use",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash|Read|WebFetch|Edit|Write"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "fishing rotate-log",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Edit(CLAUDE.md)",
@@ -10,8 +47,6 @@
       "Edit(build.rs)",
       "Edit(slop/**/*)",
       "Write(slop/**/*)",
-      "Edit(src/*)",
-      "Write(src/*)",
       "Edit(src/**/*)",
       "Write(src/**/*)",
       "Bash",
@@ -20,18 +55,18 @@
       "Read",
       "WebFetch",
       "WebSearch",
-      "LSP"
+      "LSP",
+      "ToolSearch",
+      "mcp__grep-glob__glob",
+      "mcp__grep-glob__grep"
     ],
+    "defaultMode": "dontAsk",
     "deny": [
       "Agent",
       "Write(.claude/*)",
       "Edit(.claude/*)",
       "Write(.claude/**/*)",
       "Edit(.claude/**/*)"
-    ],
-    "defaultMode": "dontAsk"
-  },
-  "enabledPlugins": {
-    "rust-analyzer-lsp@claude-plugins-official": true
+    ]
   }
 }

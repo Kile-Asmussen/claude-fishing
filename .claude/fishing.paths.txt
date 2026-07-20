@@ -1,0 +1,13 @@
+
+# Each line is a glob pattern, similar to .gitignore syntax, that matches against file names Claude wishes to read.
+#
+# Lines prefixed with ! are negative patterns, other lines are positive patterns.
+# Contents of .claude/fishing.paths.local.txt (.gitignore'd by default) is added to this list if it exists.
+# If any positive pattern and no negative patterns match, the file read is allowed.
+#
+# Patterns starting with / are absolute paths, allowing Claude to read directories outside
+# the project directory for reference, though it is recommended to put those in the local file.
+#
+# examples:
+**
+!.env

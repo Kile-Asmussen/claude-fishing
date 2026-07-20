@@ -1,0 +1,11 @@
+
+# Each line is a wildcard pattern that matches against URLs Claude wishes to fetch from the web.
+#
+# Lines prefixed with ! are negative patterns, other lines are positive patterns.
+# Contents of .claude/fishing.webfetch.local.txt (.gitignore'd by default) is added to this list if it exists.
+# If any positive pattern and no negative patterns match, the file read is allowed.
+#
+# Full URLs are matched, and the * pattern matches any substring, including those containing / .
+#
+# examples:
+https://code.claude.com/docs*

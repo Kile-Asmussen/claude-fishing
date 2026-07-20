@@ -1,0 +1,11 @@
+
+# Each line is a glob pattern matched against directory names or project-relative paths.
+# Matching directories are skipped entirely during Glob and Grep traversal.
+#
+# Lines prefixed with ! are unhide overrides: they allow a hidden directory (one whose
+# name starts with .) through even though hidden directories are excluded by default.
+# Contents of .claude/fishing.glob-exclude.local.txt (.gitignore'd by default) is added to this list.
+#
+# examples:
+target
+node_modules

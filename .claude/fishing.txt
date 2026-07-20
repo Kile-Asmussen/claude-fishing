@@ -1,0 +1,42 @@
+# Fishing — Claude Code hooks suite
+
+This project uses the 'fishing' hooks suite to enforce safety policies on your actions.
+
+## Active hooks
+
+- **SessionStart / rotate-log**: rotates `.claude/fishing.log` to `.claude/fishing.log~` at the start of each session.
+- **PreToolUse / pre-tool-use**: enforces allowlists for Bash commands, file reads (Read), web fetches (WebFetch), and file writes (Edit/Write).
+- **ConfigChange / config-change**: validates any change to settings.json against the official Claude Code schema before allowing it.
+- **CwdChanged**: blocks all working directory changes.
+
+## MCP tools
+
+The `fishing-grep-glob-mcp` MCP server provides two tools:
+
+- **glob**: recursively lists files matching a glob pattern, respecting `.claude/fishing.glob-exclude.txt` and `.claude/fishing.paths.txt`.
+- **grep**: searches file contents with a regex, respecting the same exclusion and path rules.
+
+Hidden directories (`.git`, `.claude`, etc.) are skipped by default.
+
+These tools replace the use of `ls`/`find` and `grep`/`rg` bash commands. Load this mcp instead for gaining an overview of this project.
+
+## Configuration files
+
+All config files live in `.claude/` and follow the `fishing.<purpose>.txt` / `fishing.<purpose>.local.txt` naming scheme.
+The `.local` variants are merged in at runtime and are excluded from version control (listed in `.gitignore`).
+
+| File | Purpose |
+|------|---------|
+| `fishing.bash.txt` | Regexes for allowed/denied Bash commands |
+| `fishing.paths.txt` | Glob patterns for allowed/denied file reads |
+| `fishing.webfetch.txt` | Wildcard patterns for allowed/denied URLs |
+| `fishing.glob-exclude.txt` | Directory names/paths excluded from glob and grep traversal |
+
+## Log
+
+`.claude/fishing.log` accumulates hook decisions for the current session. It is rotated at the start of each new session.
+
+## Self-correction
+
+When a hook denies an action, the denial reason explains which config file to update and the required pattern syntax.
+When an MCP tool call fails due to a policy violation, the error message similarly names the relevant config file.

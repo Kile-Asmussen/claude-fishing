@@ -6,7 +6,7 @@
         ".envrc": "flake.nix, flake.lock",
         "README.md": "CLAUDE.md, LICENSE",
         "hook-restrict-*.py": "${capture}.json",
-        "*": "${capture}~"
+        "fishing.txt": "fishing.*.txt, fishing.log"
     },
     "rust-analyzer.trace.server": "verbose",
     "direnv.path.executable": "direnv"

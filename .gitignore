@@ -9,3 +9,11 @@ flake.lock
 .claude/bash-local
 .claude/paths-local
 .claude/webfetch-local
+
+# fishing config files:
+.claude/fishing.bash.local.txt
+.claude/fishing.paths.local.txt
+.claude/fishing.webfetch.local.txt
+.claude/fishing.glob-exclude.local.txt
+.claude/fishing.log
+.claude/fishing.log~

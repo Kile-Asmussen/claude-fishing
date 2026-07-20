@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "grep-glob": {
+      "args": [],
+      "command": "fishing-grep-glob-mcp",
+      "type": "stdio"
+    }
+  }
+}

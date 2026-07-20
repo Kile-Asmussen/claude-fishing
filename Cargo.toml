@@ -19,7 +19,7 @@ path = "src/grep-glob/main.rs"
 clap = { version = "4.6.1", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
-jsonschema = "0.46.6"
+jsonschema = "0.48.1"
 rootcause = "0.13.0"
 reqwest = { version = "0.13.4", features = ["blocking"] }
 regex = "1.12.4"

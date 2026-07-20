@@ -111,7 +111,7 @@ fn inject_hook_entries(env: &mut HookEnv, cmd: &str) -> Result<(), String> {
         .as_array_mut()
         .ok_or_else(|| "settings.json permissions.allow field is not an array".to_string())?;
 
-    for tool in ["mcp__grep-glob__glob", "mcp__grep-glob__grep"] {
+    for tool in ["mcp__grep-glob__glob", "mcp__grep-glob__grep", "ToolSearch"] {
         if !allow.iter().any(|v| v.as_str() == Some(tool)) {
             allow.push(serde_json::json!(tool));
         }
@@ -184,7 +184,13 @@ mod tests {
     #[test]
     fn inject_registers_mcp_server() {
         let (dir, mut env) = setup("{}");
-        inject_hooks(dir.path(), &mut env, "/usr/local/bin/fishing", "/usr/local/bin/fishing-grep-glob-mcp").unwrap();
+        inject_hooks(
+            dir.path(),
+            &mut env,
+            "/usr/local/bin/fishing",
+            "/usr/local/bin/fishing-grep-glob-mcp",
+        )
+        .unwrap();
         let mcp_raw = fs::read_to_string(dir.path().join(".mcp.json")).unwrap();
         let out: serde_json::Value = serde_json::from_str(&mcp_raw).unwrap();
         assert_eq!(out["mcpServers"]["grep-glob"]["type"], "stdio");
@@ -197,8 +203,20 @@ mod tests {
     #[test]
     fn inject_mcp_is_idempotent() {
         let (dir, mut env) = setup("{}");
-        inject_hooks(dir.path(), &mut env, "/usr/local/bin/fishing", "/usr/local/bin/fishing-grep-glob-mcp").unwrap();
-        inject_hooks(dir.path(), &mut env, "/usr/local/bin/fishing", "/usr/local/bin/fishing-grep-glob-mcp").unwrap();
+        inject_hooks(
+            dir.path(),
+            &mut env,
+            "/usr/local/bin/fishing",
+            "/usr/local/bin/fishing-grep-glob-mcp",
+        )
+        .unwrap();
+        inject_hooks(
+            dir.path(),
+            &mut env,
+            "/usr/local/bin/fishing",
+            "/usr/local/bin/fishing-grep-glob-mcp",
+        )
+        .unwrap();
         let mcp_raw = fs::read_to_string(dir.path().join(".mcp.json")).unwrap();
         let out: serde_json::Value = serde_json::from_str(&mcp_raw).unwrap();
         assert!(out["mcpServers"]["grep-glob"].is_object());
@@ -227,8 +245,14 @@ mod tests {
         assert_eq!(out["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
         assert_eq!(out["hooks"]["ConfigChange"].as_array().unwrap().len(), 1);
         let allow = out["permissions"]["allow"].as_array().unwrap();
-        let glob_count = allow.iter().filter(|v| v.as_str() == Some("mcp__grep-glob__glob")).count();
-        let grep_count = allow.iter().filter(|v| v.as_str() == Some("mcp__grep-glob__grep")).count();
+        let glob_count = allow
+            .iter()
+            .filter(|v| v.as_str() == Some("mcp__grep-glob__glob"))
+            .count();
+        let grep_count = allow
+            .iter()
+            .filter(|v| v.as_str() == Some("mcp__grep-glob__grep"))
+            .count();
         assert_eq!(glob_count, 1);
         assert_eq!(grep_count, 1);
     }
