@@ -120,7 +120,7 @@ The following types of hooks are injected upon running `init`:
 
 - `CwdChanged` via `fishing cwd-changed` : blocks working directory changes (just to be safe)
 
-- `ConfigChange` --- Validates the JSON of Claude Code's `settings.json` and `settings.local.json` files to prevent a change in the files breaking the integrity of the hooks.
+- `ConfigChange` via `fishing config-change` : Validates the JSON of Claude Code's `settings.json` and `settings.local.json` files to prevent a change in the files breaking the integrity of the hooks.
 
 **NOTICE:** As of version 2.1.196, the `ConfigChange` hooks cannot actually block a configuration change. [Bug report here.](https://github.com/anthropics/claude-code/issues/79547)
 
