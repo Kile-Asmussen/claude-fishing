@@ -12,3 +12,5 @@ cargo build
 cargo test
 cargo build --bin fishing
 cargo build --bin fishing-grep-glob-mcp
+fishing --help
+fishing \w+ --help

@@ -146,6 +146,7 @@ fn inject_hook_entries(env: &mut HookEnv, cmd: &str) -> Result<(), String> {
         Some("project_settings|local_settings|user_settings"),
         &format!("{cmd} config-change"),
     );
+    append_hook(hooks, "CwdChanged", None, &format!("{cmd} cwd-changed"));
 
     let out = serde_json::to_string_pretty(&root)
         .map_err(|e| format!("failed to serialize settings.json: {e}"))?;
@@ -312,6 +313,16 @@ mod tests {
         let hooks = out["hooks"]["ConfigChange"].as_array().unwrap();
         let cmd = hooks[0]["hooks"][0]["command"].as_str().unwrap();
         assert!(cmd.contains("config-change"));
+    }
+
+    #[test]
+    fn inject_registers_cwd_changed_hook() {
+        let (dir, mut env) = setup("{}");
+        inject_hooks(dir.path(), &mut env, "fishing", "fishing-grep-glob-mcp").unwrap();
+        let out: serde_json::Value = serde_json::from_str(&env.settings_json().unwrap()).unwrap();
+        let hooks = out["hooks"]["CwdChanged"].as_array().unwrap();
+        let cmd = hooks[0]["hooks"][0]["command"].as_str().unwrap();
+        assert!(cmd.contains("cwd-changed"));
     }
 }
 

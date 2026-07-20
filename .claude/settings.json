@@ -1,5 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "enabledMcpjsonServers": [
+    "grep-glob"
+  ],
   "enabledPlugins": {
     "rust-analyzer-lsp@claude-plugins-official": true
   },
@@ -13,6 +16,16 @@
           }
         ],
         "matcher": "project_settings|local_settings|user_settings"
+      }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "command": "fishing cwd-changed",
+            "type": "command"
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -37,9 +50,12 @@
       }
     ]
   },
+  "outputStyle": "default",
   "permissions": {
     "allow": [
       "Edit(CLAUDE.md)",
+      "Write(README.md)",
+      "Edit(README.md)",
       "Edit(TODO.md)",
       "Write(TODO.md)",
       "Edit(Cargo.toml)",
@@ -50,8 +66,6 @@
       "Edit(src/**/*)",
       "Write(src/**/*)",
       "Bash",
-      "Glob",
-      "Grep",
       "Read",
       "WebFetch",
       "WebSearch",
@@ -69,9 +83,5 @@
       "Edit(.claude/**/*)"
     ]
   },
-  "enabledMcpjsonServers": [
-    "grep-glob"
-  ],
-  "outputStyle": "default",
   "spinnerTipsEnabled": false
 }
