@@ -8,6 +8,7 @@ use claude_fishing::hooks::env::HookEnv;
 use claude_fishing::hooks::glob_exclude;
 use claude_fishing::hooks::paths::is_path_allowed;
 use claude_fishing::util::{project_dir, resolve_safe};
+use chrono::Local;
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use regex::Regex;
 use rmcp::{
@@ -29,7 +30,11 @@ use walkdir::WalkDir;
 fn check_path_allowed(paths_cfg: &str, root: &Path, path: &Path) -> Result<(), String> {
     match is_path_allowed(paths_cfg, root, path) {
         Ok(true) => Ok(()),
-        Ok(false) => Err(format!("path {:?} is not permitted by .claude/paths", path)),
+        Ok(false) => Err(format!(
+            "path {path:?} is not permitted by .claude/paths (project root: {root:?})\n\
+             pattern syntax: prefix / for absolute paths, ./ or no prefix for paths relative to the project root\n\
+             ask the user to add a matching pattern to .claude/paths or .claude/paths-local"
+        )),
         Err(e) => Err(e),
     }
 }
@@ -39,7 +44,8 @@ fn compile_glob(pattern: &str) -> Result<GlobSet, String> {
     let glob = GlobBuilder::new(pattern)
         .literal_separator(true)
         .build()
-        .map_err(|e| format!("invalid glob {pattern:?}: {e}"))?;
+        .map_err(|e| format!("invalid glob pattern {pattern:?}: {e}\n\
+                               use ** to match across path separators, * for a single segment"))?;
     let mut builder = GlobSetBuilder::new();
     builder.add(glob);
     builder
@@ -85,6 +91,13 @@ struct GrepParams {
 // Server struct
 // ---------------------------------------------------------------------------
 
+fn make_env() -> HookEnv {
+    let root = project_dir();
+    let claude = root.join(".claude");
+    let log_path = Some(claude.join("fishing.log"));
+    HookEnv::from_claude_dir(&claude, log_path)
+}
+
 #[derive(Clone)]
 struct GrepGlobMcp;
 
@@ -97,49 +110,59 @@ impl GrepGlobMcp {
     #[tool(description = "List files matching a glob pattern under a directory.")]
     fn glob(&self, Parameters(params): Parameters<GlobParams>) -> CallToolResult {
         let root = project_dir();
-        let env = HookEnv::from_claude_dir(&root.join(".claude"), None);
-        let paths_cfg = match env.paths_config() {
-            Ok(s) => s,
-            Err(e) => return CallToolResult::error(vec![ContentBlock::text(e)]),
-        };
-        let exclude_cfg = env.glob_exclude_config().unwrap_or_default();
-        let search_root = match params.path.as_deref() {
-            Some(p) => match resolve_safe(&root, p) {
-                Ok(r) => r,
-                Err(e) => return CallToolResult::error(vec![ContentBlock::text(e)]),
-            },
-            None => root.clone(),
-        };
+        let mut env = make_env();
+        env.log(format!(
+            "[{}] glob pattern={:?} path={:?}",
+            Local::now().format("%Y-%m-%d %H:%M:%S"),
+            params.pattern,
+            params.path,
+        ));
 
-        let pattern = params.pattern.as_deref().unwrap_or("**/*");
-        let globset = match compile_glob(pattern) {
-            Ok(g) => g,
-            Err(e) => return CallToolResult::error(vec![ContentBlock::text(e)]),
-        };
+        let result: Result<String, String> = (|| {
+            let paths_cfg = env.paths_config().map_err(|e| { env.log(format!("ERROR: {e}")); e })?;
+            let exclude_cfg = env.glob_exclude_config().unwrap_or_default();
+            let search_root = match params.path.as_deref() {
+                Some(p) => resolve_safe(&root, p).map_err(|e| {
+                    let msg = format!("{e}\nthe `path` parameter must be a relative path inside the project root {root:?}");
+                    env.log(format!("ERROR: {msg}")); msg
+                })?,
+                None => root.clone(),
+            };
 
-        let mut matches: Vec<String> = WalkDir::new(&search_root)
-            .into_iter()
-            .filter_entry(|e| {
-                if e.file_type().is_dir() {
-                    !glob_exclude::is_excluded(&exclude_cfg, &root, e.path())
-                } else {
-                    true
-                }
-            })
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter_map(|e| {
-                let rel = e.path().strip_prefix(&search_root).ok()?;
-                if !globset.is_match(rel) {
-                    return None;
-                }
-                check_path_allowed(&paths_cfg, &root, e.path()).ok()?;
-                Some(rel.to_string_lossy().into_owned())
-            })
-            .collect();
+            let pattern = params.pattern.as_deref().unwrap_or("**/*");
+            let globset = compile_glob(pattern).map_err(|e| { env.log(format!("ERROR: {e}")); e })?;
 
-        matches.sort();
-        CallToolResult::success(vec![ContentBlock::text(matches.join("\n"))])
+            let mut matches: Vec<String> = WalkDir::new(&search_root)
+                .into_iter()
+                .filter_entry(|e| {
+                    if e.file_type().is_dir() {
+                        !glob_exclude::is_excluded(&exclude_cfg, &root, e.path())
+                    } else {
+                        true
+                    }
+                })
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+                .filter_map(|e| {
+                    let rel = e.path().strip_prefix(&search_root).ok()?;
+                    if !globset.is_match(rel) {
+                        return None;
+                    }
+                    check_path_allowed(&paths_cfg, &root, e.path()).ok()?;
+                    Some(rel.to_string_lossy().into_owned())
+                })
+                .collect();
+
+            matches.sort();
+            env.log(format!("glob: {} result(s)", matches.len()));
+            Ok(matches.join("\n"))
+        })();
+
+        env.flush();
+        match result {
+            Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
+            Err(e) => CallToolResult::error(vec![ContentBlock::text(e)]),
+        }
     }
 
     /// Search file contents for a regex pattern.
@@ -152,92 +175,104 @@ impl GrepGlobMcp {
     )]
     fn grep(&self, Parameters(params): Parameters<GrepParams>) -> CallToolResult {
         let root = project_dir();
-        let env = HookEnv::from_claude_dir(&root.join(".claude"), None);
-        let paths_cfg = match env.paths_config() {
-            Ok(s) => s,
-            Err(e) => return CallToolResult::error(vec![ContentBlock::text(e)]),
-        };
-        let exclude_cfg = env.glob_exclude_config().unwrap_or_default();
-        let search_root = match params.path.as_deref() {
-            Some(p) => match resolve_safe(&root, p) {
-                Ok(r) => r,
-                Err(e) => return CallToolResult::error(vec![ContentBlock::text(e)]),
-            },
-            None => root.clone(),
-        };
+        let mut env = make_env();
+        env.log(format!(
+            "[{}] grep pattern={:?} include={:?} path={:?} include_lines={:?}",
+            Local::now().format("%Y-%m-%d %H:%M:%S"),
+            params.pattern,
+            params.include,
+            params.path,
+            params.include_lines,
+        ));
 
-        let re = match Regex::new(&params.pattern) {
-            Ok(r) => r,
-            Err(e) => {
-                return CallToolResult::error(vec![ContentBlock::text(format!(
-                    "invalid regex {:?}: {e}",
+        let result: Result<String, String> = (|| {
+            let paths_cfg = env.paths_config().map_err(|e| { env.log(format!("ERROR: {e}")); e })?;
+            let exclude_cfg = env.glob_exclude_config().unwrap_or_default();
+            let search_root = match params.path.as_deref() {
+                Some(p) => resolve_safe(&root, p).map_err(|e| {
+                    let msg = format!("{e}\nthe `path` parameter must be a relative path inside the project root {root:?}");
+                    env.log(format!("ERROR: {msg}")); msg
+                })?,
+                None => root.clone(),
+            };
+
+            let re = Regex::new(&params.pattern).map_err(|e| {
+                let msg = format!(
+                    "invalid regex in `pattern` parameter {:?}: {e}\n\
+                     use a Rust-syntax regex; note that lookaheads are not supported",
                     params.pattern
-                ))]);
-            }
-        };
+                );
+                env.log(format!("ERROR: {msg}"));
+                msg
+            })?;
 
-        let include_glob = match params.include.as_deref() {
-            Some(g) => match compile_glob(g) {
-                Ok(gs) => Some(gs),
-                Err(e) => return CallToolResult::error(vec![ContentBlock::text(e)]),
-            },
-            None => None,
-        };
+            let include_glob = match params.include.as_deref() {
+                Some(g) => Some(compile_glob(g).map_err(|e| { env.log(format!("ERROR: {e}")); e })?),
+                None => None,
+            };
 
-        let include_lines = params.include_lines.unwrap_or(false);
+            let include_lines = params.include_lines.unwrap_or(false);
 
-        let mut output: Vec<String> = WalkDir::new(&search_root)
-            .into_iter()
-            .filter_entry(|e| {
-                if e.file_type().is_dir() {
-                    !glob_exclude::is_excluded(&exclude_cfg, &root, e.path())
-                } else {
-                    true
-                }
-            })
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter_map(|e| {
-                let rel = e.path().strip_prefix(&search_root).ok()?;
+            let mut output: Vec<String> = WalkDir::new(&search_root)
+                .into_iter()
+                .filter_entry(|e| {
+                    if e.file_type().is_dir() {
+                        !glob_exclude::is_excluded(&exclude_cfg, &root, e.path())
+                    } else {
+                        true
+                    }
+                })
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+                .filter_map(|e| {
+                    let rel = e.path().strip_prefix(&search_root).ok()?;
 
-                if let Some(gs) = &include_glob {
-                    if !gs.is_match(rel) {
+                    if let Some(gs) = &include_glob {
+                        if !gs.is_match(rel) {
+                            return None;
+                        }
+                    }
+
+                    check_path_allowed(&paths_cfg, &root, e.path()).ok()?;
+
+                    if is_binary(e.path()) {
                         return None;
                     }
-                }
 
-                check_path_allowed(&paths_cfg, &root, e.path()).ok()?;
+                    let contents = fs::read_to_string(e.path()).ok()?;
+                    let rel_str = rel.to_string_lossy();
 
-                if is_binary(e.path()) {
-                    return None;
-                }
+                    if include_lines {
+                        let lines: Vec<String> = contents
+                            .lines()
+                            .enumerate()
+                            .filter_map(|(i, line)| {
+                                if re.is_match(line) {
+                                    Some(format!("{}:{}: {}", rel_str, i + 1, line))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        if lines.is_empty() { None } else { Some(lines.join("\n")) }
+                    } else if re.is_match(&contents) {
+                        Some(rel_str.into_owned())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
 
-                let contents = fs::read_to_string(e.path()).ok()?;
-                let rel_str = rel.to_string_lossy();
+            output.sort();
+            env.log(format!("grep: {} result(s)", output.len()));
+            Ok(output.join("\n"))
+        })();
 
-                if include_lines {
-                    let lines: Vec<String> = contents
-                        .lines()
-                        .enumerate()
-                        .filter_map(|(i, line)| {
-                            if re.is_match(line) {
-                                Some(format!("{}:{}: {}", rel_str, i + 1, line))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    if lines.is_empty() { None } else { Some(lines.join("\n")) }
-                } else if re.is_match(&contents) {
-                    Some(rel_str.into_owned())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        output.sort();
-        CallToolResult::success(vec![ContentBlock::text(output.join("\n"))])
+        env.flush();
+        match result {
+            Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
+            Err(e) => CallToolResult::error(vec![ContentBlock::text(e)]),
+        }
     }
 }
 

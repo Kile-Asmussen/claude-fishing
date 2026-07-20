@@ -19,16 +19,17 @@
       "Grep",
       "Read",
       "WebFetch",
-      "WebSearch"
+      "WebSearch",
+      "LSP"
     ],
-    "defaultMode": "dontAsk",
     "deny": [
       "Agent",
       "Write(.claude/*)",
       "Edit(.claude/*)",
       "Write(.claude/**/*)",
       "Edit(.claude/**/*)"
-    ]
+    ],
+    "defaultMode": "dontAsk"
   },
   "hooks": {
     "SessionStart": [
@@ -88,5 +89,8 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true
   }
 }

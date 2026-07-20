@@ -4,6 +4,7 @@
         "cwd",
         "Env",
         "fmt",
+        "lsp",
         "mcp",
         "miri",
         "nixpkgs",

@@ -84,11 +84,19 @@ pub fn missing_files(project_dir: &Path) -> Vec<&'static ConfigFile> {
         .collect()
 }
 
-/// Local variant filenames that are missing from `.gitignore` content.
+const EXTRA_GITIGNORE_ENTRIES: &[&str] = &[
+    ".claude/fishing.log",
+    ".claude/fishing.log~",
+];
+
+/// Local variant filenames and log files that are missing from `.gitignore` content.
 pub fn missing_gitignore_entries(gitignore_content: &str) -> Vec<&'static str> {
-    CONFIG_FILES
+    let from_configs = CONFIG_FILES
         .iter()
-        .map(|f| f.local_rel_path)
+        .map(|f| f.local_rel_path);
+    let extra = EXTRA_GITIGNORE_ENTRIES.iter().copied();
+    from_configs
+        .chain(extra)
         .filter(|p| !gitignore_content.lines().any(|line| line.trim() == *p))
         .collect()
 }

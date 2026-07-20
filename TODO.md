@@ -10,10 +10,6 @@ All features are implemented and unit-tested (63 tests passing). The project con
 
 ---
 
-## Concerns:
-
-Quality of error messages in the MCP needs to match the hooks: the object is to give Claude relevant information for how to immediately self-correct.
-
 
 ## Field testing
 
@@ -38,7 +34,7 @@ Run these in a real Claude Code session in a sterile directory with hooks wired 
 - [x] ConfigChange hook: valid settings change produces `CONFIG_ALLOW`
 - [ ] ConfigChange hook: invalid JSON produces `CONFIG_BLOCK`
 - [ ] ConfigChange hook: schema-invalid value produces `CONFIG_BLOCK` in default mode, `CONFIG_ALLOW` with `--json-only`
-- [x] rotate-log: new session renames `.claude/log` to `.claude/log~`
+- [x] rotate-log: new session renames `.claude/fishing.log` to `.claude/fishing.log~`
 - [x] rotate-log: no-op when no log file exists
 - [x] init: creates `.claude/bash`, `paths`, `webfetch`, `glob-exclude` with default contents
 - [x] init: updates `.gitignore` with local variant entries
@@ -49,6 +45,7 @@ Run these in a real Claude Code session in a sterile directory with hooks wired 
 - [ ] init --inject: idempotent (second run does not duplicate MCP entry or hook entries)
 - [x] Unknown tool: unrecognized tool name produces `ALLOW` with "unrecognized tool" reason
 - [x] Log format: each entry has stdin JSON, decision line with reason, stdout JSON
+- [ ] MCP log: glob and grep calls appear in `.claude/fishing.log` with timestamp and parameters
 
 ### MCP tools (not yet verified)
 

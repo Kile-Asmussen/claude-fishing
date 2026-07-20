@@ -72,7 +72,7 @@ fn run() -> Result<(), rootcause::Report> {
 
     let claude = project_dir.join(".claude");
 
-    let log: Option<PathBuf> = cli.log.or_else(|| Some(claude.join("log")));
+    let log: Option<PathBuf> = cli.log.or_else(|| Some(claude.join("fishing.log")));
 
     let mut env = HookEnv::from_claude_dir(&claude, log.clone());
 

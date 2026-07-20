@@ -30,10 +30,10 @@ strum   = "0.28.0"
 strum_macros = "0.28.0"
 
 tokio = { version = "1.52.3", features = [ "fs", "macros", "rt-multi-thread" ] }
-
-[dev-dependencies]
-tempfile = "3"
 rmcp = { version = "2.0.0", features = ["transport-io"] }
 rmcp-macros = "2.0.0"
 schemars = "1.2.1"
 walkdir = "2.5.0"
+
+[dev-dependencies]
+tempfile = "3"
