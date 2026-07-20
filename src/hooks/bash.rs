@@ -10,13 +10,24 @@ pub fn check(_project_dir: &Path, env: &mut HookEnv, command: &str) {
         Err(reason) => return env.deny(reason),
     };
 
+    let note = if command.starts_with("ls")
+        || command.starts_with("find")
+        || command.starts_with("grep")
+        || command.starts_with("rg")
+        || command.starts_with("ripgrep")
+    {
+        "(patterns are regular expressions)\n"
+    } else {
+        "(use the grep-glob MCP instead of ls/find and grep/ripgrep)\n"
+    };
+
     let patterns = config::partition(&contents);
     config::check(
         env,
         &patterns,
         command,
         "no allowed Bash patterns in .claude/bash",
-        "(patterns are regular expressions using Rust syntax)\n",
+        note,
         |p| {
             let anchored = format!(r"\A(?:{p})\z");
             Regex::new(&anchored)

@@ -9,3 +9,4 @@
 #
 # examples:
 https://code.claude.com/docs*
+https://docs.rs*

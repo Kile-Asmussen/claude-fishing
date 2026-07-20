@@ -68,5 +68,10 @@
       "Write(.claude/**/*)",
       "Edit(.claude/**/*)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "grep-glob"
+  ],
+  "outputStyle": "default",
+  "spinnerTipsEnabled": false
 }

@@ -22,12 +22,18 @@ pub fn check(_project_dir: &Path, env: &mut HookEnv, mode: Mode, local: bool) {
 
     let text = match text {
         Ok(t) => t,
-        Err(e) => return env.config_block(format!("could not read settings.json: {e}")),
+        Err(e) => return env.config_block(format!("could not read settings file: {e}")),
     };
 
     let value: Value = match serde_json::from_str(&text) {
         Ok(v) => v,
-        Err(e) => return env.config_block(format!("settings.json is not valid JSON: {e}")),
+        Err(e) => {
+            return env.config_block(if local {
+                format!("settings.local.json is not valid JSON: {e}")
+            } else {
+                format!("settings.json is not valid JSON: {e}")
+            });
+        }
     };
 
     if mode == Mode::JsonOnly {

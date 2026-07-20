@@ -117,6 +117,16 @@ fn inject_hook_entries(env: &mut HookEnv, cmd: &str) -> Result<(), String> {
         }
     }
 
+    let enabled_mcp = obj
+        .entry("enabledMcpjsonServers")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .ok_or_else(|| "settings.json enabledMcpjsonServers field is not an array".to_string())?;
+
+    if !enabled_mcp.iter().any(|v| v.as_str() == Some("grep-glob")) {
+        enabled_mcp.push(serde_json::json!("grep-glob"));
+    }
+
     let hooks = obj
         .entry("hooks")
         .or_insert_with(|| serde_json::json!({}))
@@ -255,6 +265,30 @@ mod tests {
             .count();
         assert_eq!(glob_count, 1);
         assert_eq!(grep_count, 1);
+    }
+
+    #[test]
+    fn inject_enables_mcp_json_server() {
+        let (dir, mut env) = setup("{}");
+        inject_hooks(dir.path(), &mut env, "fishing", "fishing-grep-glob-mcp").unwrap();
+        let out: serde_json::Value = serde_json::from_str(&env.settings_json().unwrap()).unwrap();
+        let enabled = out["enabledMcpjsonServers"].as_array().unwrap();
+        assert!(enabled.iter().any(|v| v.as_str() == Some("grep-glob")));
+    }
+
+    #[test]
+    fn inject_enabled_mcp_json_server_is_idempotent() {
+        let (dir, mut env) = setup("{}");
+        inject_hooks(dir.path(), &mut env, "fishing", "fishing-grep-glob-mcp").unwrap();
+        inject_hooks(dir.path(), &mut env, "fishing", "fishing-grep-glob-mcp").unwrap();
+        let out: serde_json::Value = serde_json::from_str(&env.settings_json().unwrap()).unwrap();
+        let count = out["enabledMcpjsonServers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|v| v.as_str() == Some("grep-glob"))
+            .count();
+        assert_eq!(count, 1);
     }
 
     #[test]
