@@ -1,17 +1,17 @@
 # Claude's Fishing Hooks
 
-This is a hooks suite for [Claude Code](https://claude.ai/code) that lets Claude operate with greater autonomy while keeping sensitive files safe.
+This is a hooks suite for [Claude Code](https://claude.ai/code) that lets Claude operate with greater autonomy while keeping sensitive files safe and preventing user decision fatigue.
 
 Any local data that Claude touches is sent to Anthropic's servers. Many realworld code project folders contain files with credentials and other secrets in plain text (sometimes committed to the repository! If that's you, rotate your keys!) Fishing enforces an allowlist on every file read, bash command, and web fetch at the hook layer, before the data is loaded into Claude Code.
 
 It also revives the `Glob` and `Grep` tools that were recently removed from the Claude Code harness, so Claude can search the codebase without needing broad bash access, and preventing grepping operations from reading sensitive files at the same time.
 
-## What it installs
+## What is it?
 
 Two binaries:
 
-- **`fishing`** — the hooks and initializer.
-- **`fishing-grep-glob-mcp`** — the MCP server.
+- `fishing` — the CLI tool containing the hooks and initializer.
+- `fishing-grep-glob-mcp` — the MCP server.
 
 ## Installation
 
@@ -24,16 +24,16 @@ cargo install --path .
 Project configuration:
 
 ```sh
-cd /your/project
+# inside your project directory
 fishing init
 ```
 
-`init` creates config files under `.claude/`, updates `.gitignore` in relevant ways, injects the hooks into `.claude/settings.json`, and registers the MCP server in `.mcp.json`. This is indempotent.
+This command creates config files under `.claude/`, updates `.gitignore` in relevant ways, injects the hooks into `.claude/settings.json`, and registers the MCP server in `.mcp.json`. The operation is idempotent.
 
 If `fishing` or `fishing-grep-glob-mcp` are not on your `$PATH` at their default names, pass the invocation paths explicitly:
 
 ```sh
-fishing init --inject /path/to/fishing --mcp /path/to/fishing-grep-glob-mcp
+fishing init --inject ~/somewhere/alt-fishing --mcp ~/somewhere/else/alt-grep-glob
 ```
 
 ## Configuration
@@ -66,8 +66,12 @@ Regular expressions matched against the full command string. Same format as the 
 
 ```
 # allow common dev commands
-cargo (build|test|check|clippy|fmt)
-npm (install|run|test)
+cargo (build|test|check|clippy|fmt).*
+npm (install|run|test).*
+# deny command chaining
+!.*&&.*
+!.*;.*
+!.*\|.*
 # deny destructive commands even if something above would match
 !.*rm -rf.*
 !.*git push --force.*
@@ -88,7 +92,7 @@ https://docs.rs*
 
 Minor configuration file of project-relative paths to skip during MCP traversal, to prevent enormous printouts (a quick `ls ./target/**` of this project after a clean+build prints a cool 2000+ lines!)
 
-Hidden directories (names starting with `.`) are always skipped unless explicitly un-hidden with a `!` prefix. Dot-files are revealed by the glob tool (for `.gitignore` etc.)
+Hidden directories (`.git/` etc.) are always skipped unless explicitly un-hidden with a `!` prefix. Hidden files are always shown (`.gitignore` etc.)
 
 ```
 target
@@ -99,10 +103,10 @@ node_modules
 
 ### Write permissions: derived from `settings.json`
 
-Edit and Write operations are controlled by Claude Code's built-in `permissions.allow` entries in `.claude/settings.json`, using the `Edit(glob)` / `Write(glob)` syntax. Fishing enforces two additional hard rules on top of that:
+Edit and Write operations are controlled by Claude Code's built-in `permissions.allow` entries in `.claude/settings.json`, using the `Edit(...)` / `Write(...)` syntax. Fishing enforces two additional hard rules on top of that:
 
-- Writes must stay within the project directory.
-- Writes to `.claude/` are always blocked (Claude cannot modify its own hook configuration).
+- Writes/Edits must stay within the project directory.
+- Writes/Edits to `.claude/` are always blocked as a security measure.
 
 This is more of a defense in depth measure.
 
@@ -112,7 +116,7 @@ The following types of hooks are injected upon running `init`:
 
 - `PreToolUse` via `fishing pre-tool-use` : enforces the allow lists for tool invocations
 
-- `SessionStart` via `fishing rotate-log` : does exactly what you think (moves one (1) file a bit to the left)
+- `SessionStart` via `fishing rotate-log` : does exactly what you think (moves one (1) file)
 
 - `CwdChanged` via `fishing cwd-changed` : blocks working directory changes (just to be safe)
 
